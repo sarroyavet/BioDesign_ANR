@@ -1,0 +1,236 @@
+% Load packages {{{
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage[colorlinks=true]{hyperref}
+\usepackage[cmex10]{amsmath}
+\usepackage{mdwmath}
+\usepackage{mdwtab}
+\usepackage{amsfonts}
+\usepackage{mathrsfs}
+\usepackage{bm}
+\usepackage{subfig}
+\usepackage[capitalise]{cleveref}
+\usepackage{multirow}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric,arrows}
+\usepackage{soul}
+\usepackage{float}
+\usepackage{setspace}
+\usepackage{natbib}
+\usepackage{booktabs}
+
+\usepackage{minted}
+\usemintedstyle{tango}
+% }}}
+
+% Title and authors {{{
+%Title
+\title{Scripts}
+%Authors
+\author{David Hernández-Aristizábal}
+% }}}
+
+\begin{document}
+
+% New commands {{{
+% New colors
+\definecolor{BlueHTML}{RGB}{0, 102, 204}
+% }}}
+
+\maketitle
+
+% Structure {{{
+\section{Main scripts}
+% RunAnalysis.py {{{
+\subsection{Run analysis}
+% Execution {{{
+\subsubsection{Execution}
+\begin{minted}{bash}
+    python3 RunAnalysis.py -i PARAMS.json
+\end{minted}
+% }}}
+% Required packages {{{
+\subsubsection{Required packages}
+\begin{minted}{python}
+    # Python libraries
+    import os
+    import sys
+    import json
+    import getopt
+    import time
+    # In-house modules
+    sys.path.append('../PythonUtilities')
+    import AsterStudyUtilities as asus
+\end{minted}
+% }}}
+% General function {{{
+\subsubsection{General function}
+\begin{minted}{python}
+    # Read parameters
+    params = json.load("PARAMS.json")
+    # Create Code_Aster study
+    study = asus.AsterStudy()
+    # Set up study parameters
+    study.PARAMETER = PARAMETER
+    study.comm = ".../MorphoDesignWithContact.comm"
+    # Create EXPORT file
+    study.CreateStudy()
+    # Create initial geometry
+    os.system("python3 .../InitialTwoGeoParts.py -i PARAMS.json")
+    # Run Code_Aster study
+    study.RunStudy(outSalome = True)
+    while notFinish:
+        # Remesh geometry
+        os.system("python3 .../RemeshTwoParts.py -i PARAMS.json")
+        # Run Code_Aster study
+        study.RunStudy(outSalome = True)
+
+\end{minted}
+% }}}
+% }}}
+
+% InitialTwoGeoParts.py {{{
+\subsection{Initial geometry}
+% Execution {{{
+\subsubsection{Execution}
+\begin{minted}{bash}
+    python3 InitialTwoGeoParts.py -i PARAMS.json
+\end{minted}
+% }}}
+% Required packages {{{
+\subsubsection{Required packages}
+\begin{minted}{python}
+    # Python libraries
+    import os
+    import sys
+    import json
+    import getopt
+    import gmsh
+    import math
+    import numpy
+    # In-house modules
+    sys.path.append('../PythonUtilities')
+    import ReadGmsh as rgmsh
+\end{minted}
+% }}}
+% General function {{{
+\subsubsection{General function}
+\begin{minted}{python}
+    # Read parameters
+    params = json.load("PARAMS.json")
+    # Make the deformable geometry
+    gmsh.initialize()
+    wp_face = geo.addPlaneSurface([wp_loop])
+    # Approximation of contact length
+    fine_x = closestPoint()
+    # Definition of the field of element sizes
+    mesh.field.setAsBackgroundMesh(bacFieldNum)
+    # Mesh of the deformable geometry
+    mesh.generate(2)
+    gmsh.write("geomwp.unv")
+    gmsh.finalize()
+    # Make the non-deformable geometry
+    gmsh.initialize()
+    base_face = geo.addPlaneSurface([base_loop])
+    # Definition of the field of element sizes
+    bsFields = rgmsh.BoxFieldsIncreasingSize(...fine_x...)
+    # Mesh the non-deformable geometry
+    mesh.generate(2)
+    gmsh.write("geombs.unv")
+    gmsh.finalize()
+\end{minted}
+% }}}
+% }}}
+
+% RemeshTwoParts.py {{{
+\subsection{Remesh}
+% Execution {{{
+\subsubsection{Execution}
+\begin{minted}{bash}
+    python3 RemeshTwoParts.py -i PARAMS.json
+\end{minted}
+% }}}
+% Required packages {{{
+\subsubsection{Required packages}
+\begin{minted}{python}
+    # Python libraries
+    import os
+    import sys
+    import json
+    import getopt
+    import gmsh
+    import numpy
+    # In-house modules
+    sys.path.append('../PythonUtilities')
+    import ReadGmsh as rgmsh
+\end{minted}
+% }}}
+% General function {{{
+\subsubsection{General function}
+\begin{minted}{python}
+    # Read parameters
+    params = json.load("PARAMS.json")
+    # Reconstruction of the deformable geometry
+    gmsh.initialize()
+    model = rgmsh.Remesh(...)
+    # Approximation of contact length
+    fine_x = closestPoint()
+    # Definition of the field of element sizes
+    mesh.field.setAsBackgroundMesh(bacFieldNum)
+    # Remesh the deformable geometry
+    mesh.generate(2)
+    gmsh.write("geomwp.unv")
+    gmsh.finalize()
+    # Make the non-deformable geometry
+    gmsh.initialize()
+    base_face = geo.addPlaneSurface([base_loop])
+    # Definition of the field of element sizes
+    bsFields = rgmsh.BoxFieldsIncreasingSize(...fine_x...)
+    # Remesh the non-deformable geometry
+    mesh.generate(2)
+    gmsh.write("geombs.unv")
+    gmsh.finalize()
+\end{minted}
+% }}}
+% }}}
+
+% MorphoDesignWithContact.comm {{{
+\subsection{Bio--inspired growth}
+% Execution {{{
+\subsubsection{Execution}
+\begin{minted}{bash}
+    .../salome shell -- as_run setup.export
+\end{minted}
+% }}}
+% Required packages {{{
+\subsubsection{Required packages}
+\begin{minted}{python}
+    # Python libraries
+    import os
+    import math
+    import sys
+    import json
+    import numpy as np
+    import time
+    # Code_Aster libraries
+    from Utilitai.partition import *
+    # In-house modules
+    sys.path.append('../PythonUtilities')
+    import MorphoDesignFunctions as mdf
+    from FemMesh2D import FemMesh2D as fm2
+    from FemVtk import FemVtk as fvt
+\end{minted}
+% }}}
+% General function {{{
+\subsubsection{General function}
+\begin{minted}{python}
+    # Read parameters
+    params = json.load("PARAMS.json")
+\end{minted}
+% }}}
+% }}}
+% }}}
+
+
+\end{document}
+

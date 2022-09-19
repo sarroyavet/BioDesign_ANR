@@ -1,0 +1,7 @@
+build/*
+_minted-Scripts/*
+*.aux
+*.bbl
+*.blg
+*.log
+*.out
