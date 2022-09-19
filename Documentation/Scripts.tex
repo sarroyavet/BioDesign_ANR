@@ -226,6 +226,64 @@
 \begin{minted}{python}
     # Read parameters
     params = json.load("PARAMS.json")
+    # Definition of Code_Aster static concepts: material, mesh and model
+    mesh_wp = LIRE_MAILLAGE(FORMAT = 'IDEAS', ...)
+    mesh_bs = LIRE_MAILLAGE(FORMAT = 'IDEAS', ...)
+    mesh    = CREA_MAILLAGE(DECOUPE_LAC = _F(...), ...)
+    mode    = AFFE_MODELE(AFFE = _F(MODELISATION = ('D_PLAN'), ...)
+    mater   = DEFI_MATERIAU(ELAS = (...))
+    matf    = AFFE_MATERIAU(AFFE = _F(MATER= mater, ...), MODELE = mode)
+    # Set time--dependent control variables
+    ite = ...
+    bestContPre = ...
+    # Define initial soft field (where the material can grow)
+    toGrw0 = CREA_CHAMP(...)
+    # Adjust the location of the geometries (necessary to ensure contact
+    # convergence)
+    if not interpenetration:
+        reloc = CREA_CHAMP(...)
+        mesh  = MODI_MAILLAGE(...)
+    # Set up mesh and define loads
+    mesh    = DEFI_GROUP(...)
+    ...     = AFFE_CHAR_MECA(...)
+    contact = DEFI_CONTACT(...)
+    # Definition of formulas and function fields
+    ... = FORMULE(...)
+    ... = CREA_CHAMP(...)
+    # Bio--inspired growth iterations
+    for k1 in range(number of iterations):
+        # Compute the stress field that induces growth (with contact
+        # conditions)
+        resu = STAT_NON_LINE(...)
+        # Compute the hydrostatic and the shear stress
+        resu = CALC_CHAMP(CONTRAINTE = ('SIGM_NOEU', 'SIGM_ELGA',
+                                        'SIEF_NOEU'),
+                          CRITERES = ('SIEQ_ELGA'),...)
+        resu = CALC_CHAMP(CHAM_UTIL = _F(FORMULE = (Shyd_f, Svon_f),...)
+        # Compute the contact pressure and its quality
+        cont_p = CALC_PRESSION(...)
+        Rp = mdf.Rp_OrderedData(...)
+        # Compute the quality of the shear stress
+        Rv = 1.0 - (maxTau - tauRef)/(maxTau + tauRef)
+        # Compute the growth function
+        Sgrw_f  = FORMULE(func = mdf.SgrowthDesign, ...)
+        resu    = CALC_CHAMP(CHAM_UTIL = (_F(FORMULE = (Sgrw_f), ...)))
+        grw_fi = CREA_CHAMP(OPERATION = 'EXTR', ...)
+        toGrw  = CREA_CHAMP(OPERATION = 'EVAL', ...)
+        # Get field norm
+        grwStrVtk = fvt(...)
+        grwNorm = grwStrVtk.LpNormScalar(0)
+        # Scale field with the norm
+        toGrwSca = CREA_CHAMP(OPERATION = 'COMB', ...)
+        # Compute growth stress
+        growth_t = CREA_CHAMP(OPERATION = 'ASSE', ...)
+        # Compute the displacements driven by the growth stress
+        resu = MECA_STATIQUE(...)
+        # Apply displacements
+        disp_ap1 = CREA_CHAMP(OPERATION = 'EXTR', ...)
+        disp_ap2 = CREA_CHAMP(OPERATION = 'EVAL', ...)
+        disp_ap3 = CREA_CHAMP(OPERATION = 'ASSE', ...)
+        mesh = MODI_MAILLAGE(reuse = mesh, DEFORME = (disp_ap3))
 \end{minted}
 % }}}
 % }}}
