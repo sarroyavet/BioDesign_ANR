@@ -43,7 +43,7 @@
 \tableofcontents
 
 % Structure {{{
-\section{Main scripts}
+\section{Main python scripts}
 % RunAnalysis.py {{{
 \subsection{Run analysis}
 % Execution {{{
@@ -196,17 +196,18 @@
 \end{minted}
 % }}}
 % }}}
+% }}}
 
 % MorphoDesignWithContact.comm {{{
-\subsection{Bio--inspired growth}
+\section{Code\_Aster script: Bio--inspired growth}
 % Execution {{{
-\subsubsection{Execution}
+\subsection{Execution}
 \begin{minted}{bash}
     .../salome shell -- as_run setup.export
 \end{minted}
 % }}}
 % Required packages {{{
-\subsubsection{Required packages}
+\subsection{Required packages}
 \begin{minted}{python}
     # Python libraries
     import os
@@ -225,7 +226,7 @@
 \end{minted}
 % }}}
 % General function {{{
-\subsubsection{General function}
+\subsection{General function}
 \begin{minted}{python}
     # Read parameters
     params = json.load("PARAMS.json")
@@ -288,7 +289,6 @@
         disp_ap3 = CREA_CHAMP(OPERATION = 'ASSE', ...)
         mesh = MODI_MAILLAGE(reuse = mesh, DEFORME = (disp_ap3))
 \end{minted}
-% }}}
 % }}}
 % }}}
 
