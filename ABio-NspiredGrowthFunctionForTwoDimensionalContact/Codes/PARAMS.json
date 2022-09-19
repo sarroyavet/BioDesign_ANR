@@ -1,0 +1,53 @@
+{
+    "mesh": {
+        "lcMin": 0.01,
+        "fine_y": 0.2,
+        "lcMax": 0.25,
+        "lcLimFactor": 0.5,
+        "growthRatio": 4.0,
+        "lengthRatio": 10.0,
+        "geoType" : "circ",
+        "geoParams" : [4.5],
+        "baseWidth" : 50.0,
+        "baseGroups" : ["bas_x0", "bas_y0", "bas_cont", "base"],
+        "wpGroups" : ["wp_x0", "wp_load", "wp_cont", "wp"],
+        "surfName": "surfaces"
+    },
+    "fileNames": {
+        "geomFile": "/geom.unv",
+        "commFile": "/BioInspiredGrowth.comm",
+        "dummCommFile": "/BioInspiredGrowth.dumm",
+        "asterFolder": "/AsterStudy",
+        "genGeomFile": "/Geometry/InitialGeoTwoParts.py",
+        "resuFile": "/results.vtk",
+        "presResuFile": "/pressure.tab",
+        "repoFile": "/report.tab",
+        "meshSizeFile": "/meshSize.tab",
+        "bestPresFile": "/bestPressure.tab",
+        "bestResuFile": "/bestResu.vtk",
+        "resuFolder": "/RESULTS",
+        "recoFolder": "/RECONSTRUCTION",
+        "recGeomFile": "/Geometry/RemeshTwoParts.py",
+        "contourFile": "/contour"
+    },
+    "model": {
+        "loadF": 5.0,
+        "St": 210.0,
+        "nu": 0.3,
+        "alpha": 1.25,
+        "tauLim": 0.5,
+        "sigLim": 0.5,
+        "vel": 7.1,
+        "tauRef": 1.0,
+        "eta": 1.0,
+        "softT1": 1000.0,
+        "softT2": 1001.0,
+        "final": 100,
+        "prints": 10,
+        "maxSteps": 2,
+        "minSteps": 1,
+        "zero": 0.1,
+        "maxNewton": 50
+    },
+    "c_a_unit": 10
+}

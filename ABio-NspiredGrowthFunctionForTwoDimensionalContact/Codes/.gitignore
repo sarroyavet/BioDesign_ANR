@@ -1,0 +1,4 @@
+AsterStudy/
+*__pycache__*
+*.json
+!PARAMS.json
