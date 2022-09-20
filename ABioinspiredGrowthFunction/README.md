@@ -1,4 +1,4 @@
-# Bio--inspired shape--design algorithm for two--dimensional contact profiles under frictionless contact conditions.
+# Bio-inspired shape-design algorithm for two-dimensional contact profiles under frictionless contact conditions.
 This algorithm generates contact profiles with uniform contact pressure
 subjected to maximum von Mises shear restrictions.
 It was developed using the finite element package 
@@ -26,5 +26,5 @@ the path of the folder [PythonUtilities](Codes/PythonUtilities) in
 your computer must be provided.
 
 ## Author
-David Hernández--Aristizábal
+David Hernández-Aristizábal
 [ORCiD](https://orcid.org/0000-0003-4041-3785)
