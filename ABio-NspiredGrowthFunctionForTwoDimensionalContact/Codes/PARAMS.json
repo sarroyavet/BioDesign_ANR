@@ -18,7 +18,7 @@
         "commFile": "/BioInspiredGrowth.comm",
         "dummCommFile": "/BioInspiredGrowth.dumm",
         "asterFolder": "/AsterStudy",
-        "genGeomFile": "/Geometry/InitialGeoTwoParts.py",
+        "genGeomFile": "/Geometry/InitialGeometry.py",
         "resuFile": "/results.vtk",
         "presResuFile": "/pressure.tab",
         "repoFile": "/report.tab",
@@ -27,7 +27,7 @@
         "bestResuFile": "/bestResu.vtk",
         "resuFolder": "/RESULTS",
         "recoFolder": "/RECONSTRUCTION",
-        "recGeomFile": "/Geometry/RemeshTwoParts.py",
+        "recGeomFile": "/Geometry/Remesh.py",
         "contourFile": "/contour"
     },
     "model": {
@@ -40,8 +40,6 @@
         "vel": 7.1,
         "tauRef": 1.0,
         "eta": 1.0,
-        "softT1": 1000.0,
-        "softT2": 1001.0,
         "final": 100,
         "prints": 10,
         "maxSteps": 2,

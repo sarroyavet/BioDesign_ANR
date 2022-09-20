@@ -63,24 +63,12 @@ if geoType == 'circ':
         numExtras = geoParams[1]
     else:
         numExtras = 10
-elif geoType == 'lund':
-    workpiece_w = geoParams[0]
-    workpiece_f = geoParams[1]
-elif geoType == 'para':
-    workpiece_w = geoParams[0]
-    workpiece_o = geoParams[1]
-elif geoType == 'hype':
-    workpiece_w = geoParams[0]
-    workpiece_o = geoParams[1]
-    workpiece_p = geoParams[2]
-    if workpiece_p > 1.0:
-        raise("Error: For the 'hype' the third parameter must belong to (0, 1.0]")
 elif geoType == 'rec-arc':
     workpiece_w =geoParams[0]
     workpiece_r =geoParams[1]
     workpiece_h =geoParams[2]
 else:
-    raise("Error: unknown geoType, use either: 'hype', 'circ', 'para', 'rec-arc' or 'lund'.")
+    raise("Error: unknown geoType, use either: 'circ' or 'rec-arc'.")
 # }}}
 
 lcMin       = meshParams["lcMin"]
@@ -118,19 +106,6 @@ mesh = model.mesh
 
 # Create geometry {{{
 # Contact line
-def Hype(x, a, b, n):
-    term = 1.0 - abs(x/a)**n
-    return -b*(term**(1.0/n) - 1.0)
-def Poly(x, a, n):
-    return (a*x)**n
-def Lund_f_of_x(x, w, c = math.pi/2.0):
-    return c*math.log(1.0/(1.0 - (x/(w))**2.0))
-def Lund_f_of_y(y, w, c = math.pi/2.0):
-    try:
-        term = math.exp(y/c)
-    except OverflowError:
-        term = float('inf')
-    return w*math.sqrt((1.0 - 1.0/term))
 def Circ(x, r):
     return r - math.sqrt(r**2.0 - x**2.0)
 numPoints = int(2*workpiece_w/lcMin)
@@ -177,37 +152,7 @@ elif geoType == 'rec-arc':
     # Get fine_x
     fine_x = math.sqrt(2.0*fine_y*workpiece_w - fine_y**2.0) + \
             workpiece_w
-else:
-    if geoType == 'lund':
-        fine_x = 1.1*workpiece_w
-        wp_tl = geo.addPoint(0.0, workpiece_w, 0.0, 10.0)
-        wp_tr = geo.addPoint(workpiece_w, workpiece_w, 0.0, 10.0)
-        y = np.linspace(0.0, 1.0, numPoints*10)
-        x = np.array([Lund_f_of_y(yy, workpiece_w, workpiece_f) for yy in y])
-    else:
-        x = np.linspace(0.0, workpiece_w, numPoints)
-        if geoType == 'para':
-            wp_tl = geo.addPoint(0.0, 1.0, 0.0, 10.0)
-            y = np.array([Poly(xx, 1.0/workpiece_w, workpiece_o) for xx in x])
-        elif geoType == 'hype':
-            a = workpiece_w
-            b = workpiece_p
-            n = workpiece_o
-            wp_tl = geo.addPoint(0.0, b, 0.0, 10.0)
-            y = np.array([Hype(xx, a, b, n) for xx in x])
-    wp_spl_pois = []
-    for k1 in range(numPoints):
-        wp_spl_pois.append(geo.addPoint(x[k1], y[k1], 0.0, lcMax))
-    if geoType == 'lund':
-        wp_r = geo.addLine(wp_spl_pois[-1], wp_tr)
-    wp_c = geo.addSpline(wp_spl_pois)
-    # Top and left lines
-    if geoType == 'lund':
-        wp_t = geo.addLine(wp_tr, wp_tl)
-    else:
-        wp_t = geo.addLine(wp_spl_pois[-1], wp_tl)
-    wp_l = geo.addLine(wp_tl, wp_spl_pois[0])
-    wp_clist = [wp_c]
+
 # Workpiece loop and face
 if fullGeo:
     wp_loop = geo.addCurveLoop([wp_t] + wp_clist)

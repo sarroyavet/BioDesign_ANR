@@ -16,15 +16,6 @@ from FemVtk import FemVtk as fvt
 # }}}
 
 # Functions {{{
-# In-circle function {{{
-def InCircle(x, y, r, x0, y0):
-    d = np.sqrt((x - x0)**2.0 + (y - y0)**2.0)
-    if d <= r:
-        return 1.0
-    else:
-        return 0.0
-# }}}
-
 # Save contours {{{
 def SaveContour(Unit, fileName, groupName, inst = None):
     DEFI_FICHIER(ACTION = 'ASSOCIER',
@@ -54,7 +45,6 @@ def ComputeIteration():
     global U
     global mesh
     global ite
-    global wp_cont_max_length
     global toGrw
     global accFail
     # }}}
@@ -234,37 +224,6 @@ def ComputeIteration():
                         NOM_CHAM = 'UT02_NOEU')
     tauMiswp = vonStr.EXTR_COMP('X2', [wpName]).valeurs
     sigHydwp = vonStr.EXTR_COMP('X1', [wpName]).valeurs
-    # Compute region of interest
-    # Circle around the bottom--left point of 2*a_c radius
-    meshInfo = CREA_CHAMP(OPERATION = 'EXTR',
-                         TYPE_CHAM = 'NOEU_GEOM_R',
-                         NOM_CHAM = 'GEOMETRIE',
-                         MAILLAGE = mesh)
-    inCirFo = FORMULE(NOM_PARA = ('X', 'Y'),
-                       VALE = 'func(X, Y, radius, 0.0, 0.0)',
-                       func = InCircle,
-                       radius = 2.0*contArea)
-    inCirFu = CREA_CHAMP(OPERATION = 'AFFE',
-                         TYPE_CHAM = 'NOEU_NEUT_F',
-                         MODELE = mode,
-                         AFFE = _F(NOM_CMP = ("X3"),
-                                   GROUP_MA = wpName,
-                                   VALE_F = inCirFo))
-    inCirFi = CREA_CHAMP(OPERATION = 'EVAL',
-                         TYPE_CHAM = 'NOEU_NEUT_R',
-                         CHAM_F = inCirFu,
-                         CHAM_PARA = meshInfo)
-    tauIncFu = CREA_CHAMP(OPERATION = 'AFFE',
-                          TYPE_CHAM = 'NOEU_NEUT_F',
-                          MODELE = mode,
-                          AFFE = _F(NOM_CMP = ("X4"),
-                                    GROUP_MA = wpName,
-                                    VALE_F = tauIncFo))
-    tauIncFi = CREA_CHAMP(OPERATION = 'EVAL',
-                          TYPE_CHAM = 'NOEU_NEUT_R',
-                          CHAM_F = tauIncFu,
-                          CHAM_PARA = (inCirFi, vonStr))
-    tauIncLi = tauIncFi.EXTR_COMP('X4', [wpName]).valeurs
     #  Growth stress functions
     maxSigHydCom = abs(min(sigHydwp))
     maxTau = max(tauMiswp)
@@ -314,6 +273,9 @@ def ComputeIteration():
     toGrwSca = CREA_CHAMP(OPERATION = 'COMB',
                           TYPE_CHAM = 'NOEU_NEUT_R',
                           COMB = (_F(CHAM_GD = toGrw,
+# Change COEF_R when analysing the impact of the parameters.
+# For the design case, it is necessary to keep untouched the growth.
+# Thus, the evolution arrives to a stable state.
 #                                    COEF_R = abs(alpha)/grwNorm)))
                                     COEF_R = 1.0)))
     grwStr = toGrwSca.EXTR_COMP('', [], topo = 1)
@@ -432,7 +394,6 @@ def ComputeIteration():
                           MODELE = mode,
                           CHAM_GD = growth_t,
                           PROL_ZERO = 'OUI',
-#                          INFO = 2
                          )
 
     # Create load as pre stress
@@ -441,61 +402,6 @@ def ComputeIteration():
     # Solution with internal forces
     fail = True
     steps = minSteps
-    # Load steps
-#    listr = DEFI_LIST_REEL(DEBUT=0.0,
-#                           INTERVALLE=_F(JUSQU_A=1.0,
-#                                         NOMBRE=steps))
-#    while fail:
-#        try:
-#            resu = STAT_NON_LINE(CHAM_MATER=matf,
-#                                 COMPORTEMENT=_F(TOUT='OUI',
-#                                                 DEFORMATION='GROT_GDEP',
-#                                                 RESI_CPLAN_RELA=1.E-06,
-#                                                 RESI_INTE_RELA=1.E-06,
-#                                                 ITER_INTE_MAXI=maxNewton,
-#                                                 ITER_INTE_PAS=0,
-#                                                 RELATION='ELAS',
-#                                                 ITER_CPLAN_MAXI=5,
-#                                                 SYME_MATR_TANG='OUI',
-#                                                 PARM_THETA=1.0,),
-#                                 CONTACT=contact,
-#                                 CONVERGENCE=_F(ITER_GLOB_MAXI =
-#                                                maxNewton,
-#                                                RESI_GLOB_MAXI = 1E-6),
-#                                 EXCIT=(_F(CHARGE = preStr,
-#                                           FONC_MULT = func),
-#                                        _F(CHARGE = disp1)),
-#                                 INCREMENT=_F(LIST_INST=listr,
-#                                             PRECISION=1.E-06),
-#                                 METHODE='NEWTON',
-#                                 MODELE=mode,
-#                                 NEWTON=_F(REAC_ITER=1,
-#                                           REAC_ITER_ELAS=1,
-#                                           PREDICTION = 'TANGENTE'),
-#                                 ARCHIVAGE=_F(PRECISION=1.E-06,
-#                                              CRITERE='RELATIF',)
-#
-#                                 )
-#            fail = False
-#            DETRUIRE(CONCEPT = (_F(NOM = listr)))
-#        except:
-#            steps *= 2
-#            if steps > maxSteps:
-#                with open(workDir + '/nonConvergence.txt', 'w') as File:
-#                    File.write('true')
-#                return True
-#            else:
-#                DETRUIRE(CONCEPT = (_F(NOM = listr)))
-#                try:
-#                    DETRUIRE(CONCEPT = (_F(NOM = resu)))
-#                except:
-#                    with open(workDir + '/nonConvergence.txt', 'w') as \
-#                            File:
-#                        File.write('true')
-#                    return True
-#                listr = DEFI_LIST_REEL(DEBUT=0.0,
-#                                       INTERVALLE=_F(JUSQU_A=1.0,
-#                                                     NOMBRE=steps))
     resu = MECA_STATIQUE(CHAM_MATER = matf,
                          EXCIT=(_F(CHARGE = preStr),
                                 _F(CHARGE = disp1)),
@@ -531,7 +437,7 @@ def ComputeIteration():
         SaveContour(U, recoFileNames[k2], recoGroupNames[k2])
     # }}}
 
-    # Test elements {{{
+    # Test elements and write reports {{{
     # Contact area
     mail_py = MAIL_PY()
     mail_py.FromAster(mesh)
@@ -564,12 +470,6 @@ def ComputeIteration():
     DETRUIRE(CONCEPT = (_F(NOM = resu),
                         _F(NOM = reloc1),
                         _F(NOM = reloc2),
-                        _F(NOM = inCirFo),
-                        _F(NOM = inCirFu),
-                        _F(NOM = inCirFi),
-                        _F(NOM = tauIncFu),
-                        _F(NOM = tauIncFi),
-                        _F(NOM = meshInfo),
                         _F(NOM = grw_fi),
                         _F(NOM = Sgrw_f),
                         _F(NOM = growth_t),
@@ -612,8 +512,6 @@ sigLim          = modelParams["sigLim"]
 vel             = modelParams["vel"]
 tauRef          = modelParams["tauRef"]
 eta             = modelParams["eta"]
-softT1          = modelParams["softT1"]
-softT2          = modelParams["softT2"]
 final           = modelParams["final"]
 prints          = modelParams["prints"]
 minSteps        = modelParams["minSteps"]
@@ -753,10 +651,6 @@ if (os.path.isfile(workDir + meshSizeFile)):
     line = np.array([[eval(val) for val in lin_] for lin_ in line])
     line = line[:,1]
     bestContPre = line.min()
-    # Get contact length
-    line = lines[-1]
-    line = line.split(',')
-    line = line[4]
 else:
     ite = 0
     accFail = False
@@ -767,8 +661,6 @@ else:
     # Initialisation of report file
     with open(workDir + repoFile, 'w') as inFile:
         inFile.write('# Ite*abs(alpha), maxContP, maxVonMises, minHyd, contArea, Qv, Qp\n')
-    # Initialisation of contact area
-    wp_cont_max_length = -1
 # }}}
 
 # Initial soft field (where the domain can grow) {{{
@@ -781,9 +673,9 @@ _, wpNods = vtkmesh.ElementSetNodes(wp_cont_Name + '_lines')
 for node in wpNods:
     if abs(node[0]) < 1.e-6:
         wp_y = node[1]
-# Set thresholds
-thr1 = wp_y + softT1
-thr2 = wp_y + softT2
+# Set thresholds (too high so that it has no influence)
+thr1 = wp_y + 1000.0
+thr2 = wp_y + 1001.0
 toG_fun = FORMULE(NOM_PARA = ('Y'),
                   VALE = 'func(Y, t1, t2)',
                   func = mdf.SigmoidThresholds,
@@ -806,7 +698,6 @@ toGrw0 = CREA_CHAMP(OPERATION = 'EVAL',
 DETRUIRE(CONCEPT = (_F(NOM = toGrw_f)))
 DETRUIRE(CONCEPT = (_F(NOM = meshInfo)))
 DETRUIRE(CONCEPT = (_F(NOM = toG_fun)))
-
 # }}}
 
 # Compute distance between contacting contours and move if necessary {{{
@@ -882,9 +773,6 @@ func = DEFI_FONCTION(NOM_PARA='INST',
 # }}}
 
 # Code-aster formulas and fields of functions {{{
-#  In--circle shear stress
-tauIncFo = FORMULE(NOM_PARA = ('X2', 'X3'),
-                   VALE = 'X2*X3')
 #  Hydrostatic stress field
 Shyd_f = FORMULE(NOM_PARA = ('SIXX', 'SIYY', 'SIZZ'),
                  VALE = 'Shyd(SIXX, SIYY, SIZZ)',
@@ -894,8 +782,6 @@ Svon_f = FORMULE(NOM_PARA = ('SIXX', 'SIYY', 'SIZZ', 'SIXY'),
                  Svon = mdf.Svmis_pln_strain)
 #  Soft domain
 toG_fun  = FORMULE(NOM_PARA = ('X1', 'X10'), VALE = 'X1*X10')
-#  Growth stress
-sigmFun = FORMULE(NOM_PARA = ('X1', 'X10'), VALE = 'X1*X10')
 #  Displacement
 dispxf = FORMULE(NOM_PARA = ('DX'), VALE = 'DX')
 dispyf = FORMULE(NOM_PARA = ('DY'), VALE = 'DY')

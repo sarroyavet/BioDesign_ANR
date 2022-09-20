@@ -79,12 +79,12 @@
     # Create EXPORT file
     study.CreateStudy()
     # Create initial geometry
-    os.system("python3 .../InitialTwoGeoParts.py -i PARAMS.json")
+    os.system("python3 .../InitialGeometry.py -i PARAMS.json")
     # Run Code_Aster study
     study.RunStudy(outSalome = True)
     while notFinish:
         # Remesh geometry
-        os.system("python3 .../RemeshTwoParts.py -i PARAMS.json")
+        os.system("python3 .../Remesh.py -i PARAMS.json")
         # Run Code_Aster study
         study.RunStudy(outSalome = True)
 
@@ -92,12 +92,12 @@
 % }}}
 % }}}
 
-% InitialTwoGeoParts.py {{{
+% InitialGeometry.py {{{
 \subsection{Initial geometry}
 % Execution {{{
 \subsubsection{Execution}
 \begin{minted}{bash}
-    python3 InitialTwoGeoParts.py -i PARAMS.json
+    python3 InitialGeometry.py -i PARAMS.json
 \end{minted}
 % }}}
 % Required packages {{{
@@ -145,12 +145,12 @@
 % }}}
 % }}}
 
-% RemeshTwoParts.py {{{
+% Remesh.py {{{
 \subsection{Remesh}
 % Execution {{{
 \subsubsection{Execution}
 \begin{minted}{bash}
-    python3 RemeshTwoParts.py -i PARAMS.json
+    python3 Remesh.py -i PARAMS.json
 \end{minted}
 % }}}
 % Required packages {{{
