@@ -9,7 +9,7 @@ import time
 
 # In-house modules
 # CARE MUST BE TAKEN! The exact path must be provided
-sys.path.append(os.getenv('HOME') + '/Documents/Codes/BioDesign_ANR/ABio-NspiredGrowthFunctionForTwoDimensionalContact/Codes/PythonUtilities')
+sys.path.append(os.getenv('HOME') + '/Documents/Codes/BioDesign_ANR/ABioinspiredGrowthFunction/Codes/PythonUtilities')
 import MorphoDesignFunctions as mdf
 from FemMesh2D import FemMesh2D as fm2
 from FemVtk import FemVtk as fvt
