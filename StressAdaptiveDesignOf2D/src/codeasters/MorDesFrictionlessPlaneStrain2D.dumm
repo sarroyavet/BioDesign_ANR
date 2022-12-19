@@ -1,0 +1,844 @@
+# Libraries {{{
+import os
+import math
+import sys
+import json
+import numpy as np
+from Utilitai.partition import *
+import time
+
+# In-house modules
+sys.path.append('#srcDir/PythonUtilities')
+import MorphoDesignFunctions as mdf
+from FemMesh2D import FemMesh2D as fm2
+from FemVtk import FemVtk as fvt
+# }}}
+
+# Functions {{{
+# Save contours {{{
+def SaveContour(Unit, fileName, groupName, inst = None):
+    DEFI_FICHIER(ACTION = 'ASSOCIER',
+                 FICHIER = fileName,
+                 UNITE = Unit)
+    if inst == None:
+        IMPR_RESU(RESU=_F(RESULTAT = resu,
+                          NOM_CHAM = 'DEPL',
+                          #INST = 1,
+                          GROUP_MA = groupName),
+                  FORMAT = 'GMSH',
+                  UNITE=Unit)
+    else:
+        IMPR_RESU(RESU=_F(RESULTAT = resu,
+                          NOM_CHAM = 'DEPL',
+                          INST = inst,
+                          GROUP_MA = groupName),
+                  FORMAT = 'GMSH',
+                  UNITE=Unit)
+    DEFI_FICHIER(ACTION = 'LIBERER', UNITE = U)
+    # }}}
+
+# Compute iteration {{{
+def ComputeIteration():
+    # Set global variables {{{
+    global bestContPre
+    global U
+    global mesh
+    global ite
+    global wp_cont_max_length
+    global toGrw
+    global accFail
+    # }}}
+    # Get start time
+    startTime = time.time()
+
+    # Stress field to induce growth {{{
+    # Move mesh upper mesh so that it is in penetration with the lower
+    # mesh
+    reloc1 = CREA_CHAMP(TYPE_CHAM = 'NOEU_DEPL_R',
+                        OPERATION = 'AFFE',
+                        MAILLAGE = mesh,
+                        AFFE = (_F(TOUT = 'OUI',
+                                   NOM_CMP = ('DX', 'DY'),
+                                   VALE = (0.0, 0.0)),
+                                _F(GROUP_MA = wpName,
+                                   NOM_CMP = 'DY',
+                                   VALE = -0.01)))
+    mesh = MODI_MAILLAGE(reuse = mesh,
+                         MAILLAGE = mesh,
+                         DEFORME = (_F(OPTION = 'TRAN',
+                                       DEPL = reloc1)))
+    # Set the load as St/Area {Remember  Code_aster applies a pressure
+    # not a force}
+    mail_py = MAIL_PY()
+    mail_py.FromAster(mesh)
+    if len(wp_load_Name) == 1:
+        lenLoad = mdf.Length1DElementGroup(mail_py, wp_load_Name[0])
+        load = AFFE_CHAR_MECA(FORCE_CONTOUR=_F(FY = -loadF/lenLoad,
+                                               GROUP_MA=wp_load_Name),
+                              MODELE=mode)
+    else:
+        print("Error: the code is not ready to deal with several wp_load_Name. Though you can modify it.")
+        raise
+    # Solution with external forces
+    fail = True
+    steps = minSteps
+    # Load steps
+    listr = DEFI_LIST_REEL(DEBUT=0.0,
+                           INTERVALLE=_F(JUSQU_A=1.0,
+                                         NOMBRE=steps))
+    while fail:
+        try:
+            resu = STAT_NON_LINE(CHAM_MATER=matf,
+                                 COMPORTEMENT=_F(TOUT='OUI',
+                                                 DEFORMATION='PETIT',
+                                                 RESI_CPLAN_RELA=1.E-06,
+                                                 RESI_INTE_RELA=1.E-06,
+                                                 ITER_INTE_MAXI = maxNewton,
+                                                 ITER_INTE_PAS=0,
+                                                 RELATION='ELAS',
+                                                 ITER_CPLAN_MAXI=5,
+                                                 SYME_MATR_TANG='OUI',
+                                                 PARM_THETA=1.0,),
+                                 CONTACT=contact,
+                                 CONVERGENCE=_F(ITER_GLOB_MAXI =
+                                                maxNewton,
+                                                RESI_GLOB_MAXI = 1E-6),
+                                 EXCIT=(_F(CHARGE = load,
+                                           FONC_MULT = func),
+                                        _F(CHARGE = disp)),
+                                 INCREMENT=_F(LIST_INST=listr,
+                                             PRECISION=1.E-06),
+                                 METHODE='NEWTON',
+                                 INFO = 1,
+                                 MODELE=mode,
+                                 NEWTON=_F(REAC_ITER=1,
+                                           REAC_ITER_ELAS=1,
+                                           PREDICTION = 'TANGENTE'),
+                                 ARCHIVAGE=_F(PRECISION=1.E-06,
+                                              CRITERE='RELATIF',)
+                                 )
+            fail = False
+            DETRUIRE(CONCEPT = (_F(NOM = listr)))
+        except:
+            steps *= 2
+            if steps > maxSteps:
+                if accFail:
+                    raise("Error: Accumulated fail")
+                with open(workDir + '/nonConvergence.txt', 'w') as File:
+                    File.write('true')
+                return True
+            else:
+                DETRUIRE(CONCEPT = (_F(NOM = listr)))
+                try:
+                    DETRUIRE(CONCEPT = (_F(NOM = resu)))
+                except:
+                    pass
+                listr = DEFI_LIST_REEL(DEBUT=0.0,
+                                       INTERVALLE=_F(JUSQU_A=1.0,
+                                                     NOMBRE=steps))
+    accFail = False
+    movedMesh = MAIL_PY()
+    movedMesh.FromAster(mesh)
+    # Relocate mesh
+    reloc2 = CREA_CHAMP(TYPE_CHAM = 'NOEU_DEPL_R',
+                        OPERATION = 'AFFE',
+                        MAILLAGE = mesh,
+                        AFFE = (_F(TOUT = 'OUI',
+                                   NOM_CMP = ('DX', 'DY'),
+                                   VALE = (0.0, 0.0)),
+                                _F(GROUP_MA = wpName,
+                                   NOM_CMP = 'DY',
+                                   VALE = 0.01)))
+    mesh = MODI_MAILLAGE(reuse = mesh,
+                         MAILLAGE = mesh,
+                         DEFORME = (_F(OPTION = 'TRAN',
+                                       DEPL = reloc2)))
+
+    resu = CALC_CHAMP(reuse = resu,
+                      RESULTAT = resu,
+                      INST = 1.0,
+                      FORCE = 'REAC_NODA')
+    force = POST_RELEVE_T(ACTION = _F(OPERATION = 'EXTRACTION',
+                                      INTITULE = 'Reaction force',
+                                      RESULTAT = resu,
+                                      NOM_CHAM = 'REAC_NODA',
+                                      GROUP_NO = base_y0_Name,
+                                      RESULTANTE = ('DY'),
+                                      REPERE = 'GLOBAL',
+                                      MOYE_NOEUD = 'OUI'))
+    reaForce = force.EXTR_TABLE().rows[0]["DY"]
+    # }}}
+
+    # Necessary fields {{{
+    # Contact area and maximum in-contact element length
+    contE = CREA_CHAMP(TYPE_CHAM = 'ELEM_CLAC_R',
+                      OPERATION = 'EXTR',
+                      RESULTAT = resu,
+                      INST = 1,
+                      NOM_CHAM = 'CONT_ELEM')
+    contE_t = contE.EXTR_COMP('CONT', [], topo = 1)
+    contArea = mdf.ContactAreaCONT_ELEM1D(movedMesh, contE_t)
+    maxInContactLength = mdf.MaxLengthCONT_ELEM1D(movedMesh, contE_t)
+    #  Stress field at nodes and at Gaussian points
+    resu = CALC_CHAMP(reuse = resu,
+                      CONTRAINTE = ('SIGM_NOEU', 'SIGM_ELGA',
+                                    'SIEF_NOEU'),
+                      CRITERES = ('SIEQ_ELGA'),
+                      INST = 1,
+                      RESULTAT = resu)
+
+    #  Stresses at nodes
+    resu = CALC_CHAMP(CHAM_UTIL = _F(FORMULE = (Shyd_f, Svon_f),
+                                     NOM_CHAM = 'SIGM_NOEU',
+                                     NUME_CHAM_RESU = 2),
+                      RESULTAT = resu,
+                      INST = 1,
+                      reuse = resu)
+    # Compute contact pressure
+    cont_p = CALC_PRESSION(GEOMETRIE = 'DEFORMEE',
+                           GROUP_MA = (base_cont_Name),
+                           INST = 1.0,
+                           MAILLAGE = mesh,
+                           RESULTAT = resu)
+    # Get table of contact pressure
+    tr_cont = POST_RELEVE_T(ACTION = (_F(INTITULE = 'Contact ' +
+                                                    'pressure',
+                                         OPERATION = 'EXTRACTION',
+                                         GROUP_NO = base_cont_Name,
+                                         CHAM_GD = cont_p,
+                                         NOM_CMP = ('LAGS_C'))))
+    func_con = RECU_FONCTION(PARA_X = 'ABSC_CURV',
+                             PARA_Y = 'LAGS_C',
+                             TABLE = tr_cont)
+    tb_cont = CREA_TABLE(FONCTION = _F(FONCTION = func_con))
+    table_contact = tb_cont.EXTR_TABLE().values()
+    absc_curv = table_contact['ABSC_CURV']
+    absc_curv = np.array([cc for cc in absc_curv])
+    lags_c = table_contact['LAGS_C']
+    lags_c = np.array([-p for p in lags_c])
+    lags_c = np.array([abs(p) for p in lags_c])
+    maxContP = lags_c.max()
+    Rp = mdf.Rp_OrderedData(absc_curv, lags_c, contArea, loadF,
+            atEnd = True)
+    # Compute shear stress
+    vonStr = CREA_CHAMP(TYPE_CHAM = 'NOEU_NEUT_R',
+                        OPERATION = 'EXTR',
+                        RESULTAT = resu,
+                        INST = 1,
+                        NOM_CHAM = 'UT02_NOEU')
+    tauMiswp = vonStr.EXTR_COMP('X2', [wpName]).valeurs
+    sigHydwp = vonStr.EXTR_COMP('X1', [wpName]).valeurs
+    #  Growth stress functions
+    maxSigHydCom = abs(min(sigHydwp))
+    maxTau = max(tauMiswp)
+    Rv = 1.0 - (maxTau - tauRef)/(maxTau + tauRef)
+    Sgrw_f  = FORMULE(NOM_PARA = ('X1', 'X2'),
+                      VALE = 'func(X1/maxSig, X2/maxTau, alp, Rp, Rv, eta, shrlim = shrlim, hydlim = hydlim, vel = vel)',
+                      func = mdf.SgrowthDesign,
+                      maxSig = maxSigHydCom,
+                      maxTau = maxTau,
+                      alp = alpha,
+                      Rp = Rp,
+                      Rv = Rv,
+                      eta = eta,
+                      hydlim = sigLim,
+                      shrlim = tauLim,
+                      vel = vel)
+    #  Growth stress {as result}
+    resu = CALC_CHAMP(CHAM_UTIL = (_F(FORMULE = (Sgrw_f),
+                                     NOM_CHAM = 'UT02_NOEU',
+                                     NUME_CHAM_RESU = 3)),
+                      RESULTAT = resu,
+                      INST = 1,
+                      reuse = resu)
+
+    #  Growth stress {as field}
+    grw_fi = CREA_CHAMP(OPERATION = 'EXTR',
+                        TYPE_CHAM = 'NOEU_NEUT_R',
+                        NOM_CHAM = 'UT03_NOEU',
+                        RESULTAT = resu,
+                        INST = 1)
+
+    # Get field in data
+    grwStr = grw_fi.EXTR_COMP('', [], topo = 1)
+    mesh_2d = fm2.MeshFromMail_Py(mail_py, surfName)
+    grwStr_data = np.zeros(mesh_2d.nodes.numNods)
+    for k1 in range(grwStr.valeurs.size):
+        grwStr_data[grwStr.noeud[k1] - 1] = grwStr.valeurs[k1]
+    # Set coefficient \beta if necessary
+    if abs(abs(eta) - 0.00001) < 0.0:
+        coef = 1.0
+    else:
+        grwStrVtk = fvt(mesh_2d)
+        grwStrVtk.add_data(grwStr_data, "growthData")
+        grwNorm = grwStrVtk.LpNormScalar(0)
+        coef = abs(alpha)/grwNorm
+    # Scale field with the norm
+    toGrwSca = CREA_CHAMP(OPERATION = 'COMB',
+                          TYPE_CHAM = 'NOEU_NEUT_R',
+                          COMB = (_F(CHAM_GD = grw_fi,
+                                    COEF_R = coef)))
+    grwStr = toGrwSca.EXTR_COMP('', [], topo = 1)
+    grwStr_data = np.zeros(mesh_2d.nodes.numNods)
+    for k1 in range(grwStr.valeurs.size):
+        grwStr_data[grwStr.noeud[k1] - 1] = grwStr.valeurs[k1]
+    # Create The growth stress field at the soft domain only: as
+    # tensor
+    growth_t = CREA_CHAMP(OPERATION = 'ASSE',
+                          TYPE_CHAM = 'NOEU_SIEF_R',
+                          MODELE = mode,
+                          ASSE = (_F(GROUP_MA = wpName,
+                                    CHAM_GD = toGrwSca,
+                                    NOM_CMP = ('X1'),
+                                    NOM_CMP_RESU = ('SIXX')),
+                                  _F(GROUP_MA = wpName,
+                                    CHAM_GD = toGrwSca,
+                                    NOM_CMP = ('X1'),
+                                    NOM_CMP_RESU = ('SIYY')),
+                                  _F(GROUP_MA = wpName,
+                                    CHAM_GD = toGrwSca,
+                                    NOM_CMP = ('X1'),
+                                    NOM_CMP_RESU = ('SIZZ')),),)
+    #}}}
+
+    # Compare with previous best results {{{
+    # Update best result
+    if maxContP < bestContPre:
+        # Update value
+        bestContPre = maxContP
+        # Create result
+        # Delete previus best result
+        try:
+            os.remove(workDir + bestPresFile)
+            os.remove(workDir + bestResuFile)
+        except:
+            pass
+        # Print new best result
+        DEFI_FICHIER(ACTION = 'ASSOCIER',
+                     FICHIER = workDir + bestPresFile,
+                     UNITE = U)
+        IMPR_FONCTION(FORMAT = 'TABLEAU',
+                      UNITE = U,
+                      COURBE = (_F(FONCTION = func_con)))
+        DEFI_FICHIER(ACTION = 'LIBERER', UNITE = U)
+        # Get stresses as a field
+        stresses = CREA_CHAMP(TYPE_CHAM = 'NOEU_SIEF_R',
+                              OPERATION = 'EXTR',
+                              RESULTAT = resu,
+                              INST = 1,
+                              NOM_CHAM = 'SIEF_NOEU')
+        # Extract results to be saved
+        tauMis = vonStr.EXTR_COMP('X2', []).valeurs
+        sigHyd = vonStr.EXTR_COMP('X1', []).valeurs
+        stresses_tensor = stresses.EXTR_COMP('', []).valeurs
+        # Save results in vtk format
+        vtkResults = fvt(fm2.MeshFromMail_Py(mail_py, surfName))
+        vtkResults.add_data(tauMis, "tauMis")
+        vtkResults.add_data(sigHyd, "sigHyd")
+        vtkResults.add_data(fvt.FromVoigtToTensor(stresses_tensor,
+            '2D'), 'stress')
+        resuFileName = workDir + bestResuFile
+        vtkResults.WriteVtk(resuFileName)
+        DETRUIRE(CONCEPT = (_F(NOM = stresses)))
+    # }}}
+
+    # Save results {{{
+    if (ite%printAt == 0) or (ite == 1):
+        resuFileName = presResuName + str(int(ite*abs(alpha))) + presResuExt
+        contFileName = workDir + resuFolder + contourFile + \
+                str(int(ite*abs(alpha))) + '.msh'
+        SaveContour(U, contFileName, wp_cont_Name, 1.0)
+        DEFI_FICHIER(ACTION = 'ASSOCIER',
+                     FICHIER = resuFileName,
+                     UNITE = U)
+        IMPR_FONCTION(FORMAT = 'TABLEAU',
+                      UNITE = U,
+                      COURBE = (_F(FONCTION = func_con)))
+        DEFI_FICHIER(ACTION = 'LIBERER', UNITE = U)
+        # Get stresses as a field
+        stresses = CREA_CHAMP(TYPE_CHAM = 'NOEU_SIEF_R',
+                              OPERATION = 'EXTR',
+                              RESULTAT = resu,
+                              INST = 1,
+                              NOM_CHAM = 'SIEF_NOEU')
+        # Get displacements as field
+        disp_fie = CREA_CHAMP(TYPE_CHAM = 'NOEU_DEPL_R',
+                              OPERATION = 'EXTR',
+                              RESULTAT = resu,
+                              INST = 1,
+                              NOM_CHAM = 'DEPL')
+        # Extract results to be saved
+        tauMis = vonStr.EXTR_COMP('X2', []).valeurs
+        sigHyd = vonStr.EXTR_COMP('X1', []).valeurs
+        stresses_tensor = stresses.EXTR_COMP('', []).valeurs
+        disp_x = disp_fie.EXTR_COMP('DX', []).valeurs
+        disp_y = disp_fie.EXTR_COMP('DY', []).valeurs
+        disp_z = np.zeros(disp_x.size)
+        disp_field = np.column_stack((disp_x, disp_y, disp_z))
+        # Save results in vtk format
+        vtkResults = fvt(mesh_2d)
+        vtkResults.add_data(tauMis, "tauMis")
+        vtkResults.add_data(sigHyd, "sigHyd")
+        vtkResults.add_data(grwStr_data, "growthData")
+        vtkResults.add_data(disp_field, "disp")
+        vtkResults.add_data(fvt.FromVoigtToTensor(stresses_tensor,
+            '2D'), 'stress')
+        resuFileName = resuName + str(int(ite*abs(alpha))) + resuExt
+        vtkResults.WriteVtk(resuFileName)
+        DETRUIRE(CONCEPT = (_F(NOM = stresses),
+                            _F(NOM = disp_fie)))
+
+    DETRUIRE(CONCEPT = (_F(NOM = resu)))
+    # }}}
+
+    # Compute the displacements from the induced growth {{{
+    # Convert the growth stress field from nodes to Gaussian points
+    grw_gaus = CREA_CHAMP(OPERATION = 'DISC',
+                          TYPE_CHAM = 'ELGA_SIEF_R',
+                          MODELE = mode,
+                          CHAM_GD = growth_t,
+                          PROL_ZERO = 'OUI',
+                         )
+
+    # Create load as pre stress
+    preStr = AFFE_CHAR_MECA(MODELE = mode,
+                            PRE_SIGM = _F(SIGM = grw_gaus))
+    # Solution with internal forces
+    fail = True
+    steps = minSteps
+    resu = MECA_STATIQUE(CHAM_MATER = matf,
+                         EXCIT=(_F(CHARGE = preStr),
+                                _F(CHARGE = disp1)),
+                         MODELE = mode)
+
+    # Apply displacements
+    disp_ap1 = CREA_CHAMP(TYPE_CHAM = 'NOEU_DEPL_R',
+                          OPERATION = 'EXTR',
+                          RESULTAT = resu,
+                          NOM_CHAM = 'DEPL')
+    disp_ap2 = CREA_CHAMP(TYPE_CHAM = 'NOEU_NEUT_R',
+                          OPERATION = 'EVAL',
+                          CHAM_F = disp_f,
+                          CHAM_PARA = disp_ap1)
+    disp_ap3 = CREA_CHAMP(TYPE_CHAM = 'NOEU_DEPL_R',
+                          OPERATION = 'ASSE',
+                          MAILLAGE = mesh,
+                          ASSE = _F(CHAM_GD = disp_ap2,
+                                    TOUT = 'OUI',
+                                    NOM_CMP = ('X1', 'X2'),
+                                    NOM_CMP_RESU = ('DX', 'DY')))
+    mesh = MODI_MAILLAGE(reuse = mesh,
+                         MAILLAGE = mesh,
+                         DEFORME = (_F(OPTION = 'TRAN',
+                                       DEPL = disp_ap3)))
+    # Update contours
+    for k2 in range(numGroups):
+        SaveContour(U, recoFileNames[k2], recoGroupNames[k2])
+    # }}}
+
+    # Test elements {{{
+    # Contact area
+    mail_py = MAIL_PY()
+    mail_py.FromAster(mesh)
+    wp_cont_length = contArea
+    # Write report
+    # Compute the time taken by the iteration
+    endTime = time.time()
+    timeTaken = endTime - startTime
+    leftTime = timeTaken*(numItes - ite)
+    with open(workDir + meshSizeFile, 'a') as inFile:
+        inFile.write('%8d, %8e, %8e, %8e, %8e\n' % (ite,
+            maxInContactLength, reaForce, leftTime, timeTaken))
+    with open(workDir + repoFile, 'a') as inFile:
+        inFile.write(('%8f, %8f, %8f, %8f, %8f, %8f, %8f\n') %
+                (ite*abs(alpha), maxContP, max(tauMiswp), -min(sigHydwp),
+                    contArea, Rv, Rp))
+    # Remesh if necessary
+    if (maxInContactLength > lcMin*lcLimFactor) :
+        # Stop if the boundary elements are too large.
+        return True
+    # }}}
+
+    # Update iteration {{{
+    if ite >= numItes:
+        return True
+    else:
+        ite += 1
+    # }}}
+
+    # Destroy concepts {{{
+    DETRUIRE(CONCEPT = (_F(NOM = toGrwSca)))
+
+    DETRUIRE(CONCEPT = (_F(NOM = resu),
+                        _F(NOM = reloc1),
+                        _F(NOM = reloc2),
+                        _F(NOM = grw_fi),
+                        _F(NOM = Sgrw_f),
+                        _F(NOM = growth_t),
+                        _F(NOM = grw_gaus),
+                        _F(NOM = preStr),
+                        _F(NOM = cont_p),
+                        _F(NOM = contE),
+                        _F(NOM = vonStr),
+                        _F(NOM = force),
+                        _F(NOM = load),
+                        _F(NOM = disp_ap1),
+                        _F(NOM = disp_ap2),
+                        _F(NOM = disp_ap3),
+                        _F(NOM = tr_cont),
+                        _F(NOM = tb_cont),
+                        _F(NOM = func_con),))
+    # }}}
+    return False
+    # }}}
+
+# Make mesh group tuple {{{
+def MakeMeshGroupTuple(ids, source):
+    tup = []
+    for ID in ids:
+        tup.append(source[ID])
+    return tuple(tup)
+# }}}
+# }}}
+
+# Parameters {{{
+# Default {{{
+workDir = '#workDir'
+parFile = '#parFile'
+# Mesh {{{
+surfName        = "_surfs"
+bsNoGrw_y_Name  = "_bsNoGy"
+wpNoGrw_y_Name  = "_wpNoGy"
+# }}}
+# File name parameters {{{
+resuFile        = "/results.vtk"
+repoFile        = "/report.tab"
+bestPresFile    = "/bestPressure.tab"
+bestResuFile    = "/bestResu.vtk"
+resuFolder      = "/RESULTS"
+recoFolder      = "/RECONSTRUCTION"
+meshSizeFile    = "/meshSize.tab"
+presResuFile    = "/pressure.tab"
+contourFile     = "/contour"
+
+resuName, resuExt = os.path.splitext(workDir + resuFolder + resuFile)
+presResuName, presResuExt = os.path.splitext(workDir + resuFolder +
+        presResuFile)
+# }}}
+# }}}
+# External {{{
+with open(parFile, 'r') as inFile:
+    params = json.load(inFile)
+# Get each block of parameters {{{
+c_a_unit        = params["c_a_unit"]
+fileNamesParams = params["fileNames"]
+modelParams     = params["model"]
+meshParams      = params["mesh"]
+# }}}
+# File name parameters {{{
+geomFile        = fileNamesParams["geomFile"]
+geomFile, geomFileExt = os.path.splitext(geomFile)
+meshGroupFileName = fileNamesParams["meshGroupFileName"]
+# }}}
+# Model parameters {{{
+loadF           = modelParams["loadF"]
+St              = modelParams["St"]
+nu              = modelParams["nu"]
+alpha           = modelParams["alpha"]
+tauLim          = modelParams["tauLim"]
+sigLim          = modelParams["sigLim"]
+vel             = modelParams["vel"]
+tauRef          = modelParams["tauRef"]
+eta             = modelParams["eta"]
+final           = modelParams["final"]
+prints          = modelParams["prints"]
+minSteps        = modelParams["minSteps"]
+maxSteps        = modelParams["maxSteps"]
+maxNewton       = modelParams["maxNewton"]
+zero            = modelParams["zero"]
+
+numItes = int(abs(final/alpha))
+if not numItes%prints == 0:
+    numItes += (prints - numItes%prints)
+printAt = int(numItes/prints)
+# }}}
+# Mesh parameters {{{
+lcMin           = meshParams["lcMin"]
+lcLimFactor     = meshParams["lcLimFactor"]
+lcLim = lcLimFactor*lcMin
+with open(workDir + meshGroupFileName, 'r') as ifile:
+    meshGroups = json.load(ifile)
+wpGroups = meshGroups["wpGroups"]
+wpx0ids  = meshGroups["wpx0ids"]
+wpldids  = meshGroups["wpldids"]
+wpcntid  = meshGroups["wpcntid"]
+wpnmid   = meshGroups["wpnmid"]
+wpNoGy_int_ids = meshGroups["wpNoGy_int_ids"]
+bsGroups = meshGroups["bsGroups"]
+bsy0ids = meshGroups["bsy0ids"]
+bsx0ids = meshGroups["bsx0ids"]
+bscntid = meshGroups["bscntid"]
+bsnmid  = meshGroups["bsnmid"]
+bsNoGy_int_ids = meshGroups["bsNoGy_int_ids"]
+
+base_y0_Name    = MakeMeshGroupTuple(bsy0ids, bsGroups)
+base_x0_Name    = MakeMeshGroupTuple(bsx0ids, bsGroups)
+base_cont_Name  = bsGroups[bscntid]
+baseName        = bsGroups[bsnmid]
+base_NoGy_int_Name = MakeMeshGroupTuple(bsNoGy_int_ids, bsGroups)
+wp_x0_Name      = MakeMeshGroupTuple(wpx0ids, wpGroups)
+wp_load_Name    = MakeMeshGroupTuple(wpldids, wpGroups)
+wp_cont_Name    = wpGroups[wpcntid]
+wpName          = wpGroups[wpnmid]
+wp_NoGy_int_Name = MakeMeshGroupTuple(wpNoGy_int_ids, wpGroups)
+# }}}
+# Reconstruction files {{{
+contourGroups = wpGroups[:-1] + bsGroups[:-1]
+numGroups = len(contourGroups)
+recoFileNames =  [None]*numGroups
+recoGroupNames = [None]*numGroups
+i = 0
+for k1 in range(numGroups):
+    ii = i + k1
+    recoFileNames[ii] = workDir + recoFolder + '/' + contourGroups[k1] + '.msh'
+    recoGroupNames[ii] = contourGroups[k1]
+# }}}
+# }}}
+# }}}
+
+# Code aster block {{{
+# Definition of static concepts {{{
+DEBUT(LANG = 'FR', PAR_LOT = 'NON')
+# Reusable unit
+uni = c_a_unit
+U = uni + 1
+# Set material
+mater = DEFI_MATERIAU(ELAS=_F(E = St,
+                          NU = nu))
+
+# Read mesh
+DEFI_FICHIER(ACTION = 'ASSOCIER',
+        FICHIER = workDir + geomFile + 'wp' + geomFileExt,
+        UNITE = U)
+
+mesh_wp = LIRE_MAILLAGE(FORMAT = 'IDEAS',
+                        UNITE = U)
+
+DEFI_FICHIER(ACTION = 'LIBERER', UNITE = U)
+
+DEFI_FICHIER(ACTION = 'ASSOCIER',
+        FICHIER = workDir + geomFile + 'bs' + geomFileExt,
+        UNITE = U)
+
+mesh_bs = LIRE_MAILLAGE(FORMAT = 'IDEAS',
+                        UNITE = U)
+
+DEFI_FICHIER(ACTION = 'LIBERER', UNITE = U)
+
+mesh0 = ASSE_MAILLAGE(MAILLAGE_1 = mesh_wp,
+                      MAILLAGE_2 = mesh_bs,
+                      OPERATION = 'SUPERPOSE')
+mesh0 = MODI_MAILLAGE(reuse=mesh0,
+                      MAILLAGE=mesh0,
+                      ORIE_PEAU_2D=_F(GROUP_MA=(wp_cont_Name,
+                                                base_cont_Name)))
+mesh = CREA_MAILLAGE(MAILLAGE = mesh0,
+                     DECOUPE_LAC = _F(GROUP_MA_ESCL = (wp_cont_Name)))
+mesh = DEFI_GROUP(MAILLAGE = mesh,
+                  CREA_GROUP_MA = _F(NOM = surfName,
+                                   TOUT = 'OUI'),
+                  reuse = mesh)
+
+# Set model
+mode = AFFE_MODELE(AFFE=_F(MODELISATION=('D_PLAN', ),
+                       PHENOMENE='MECANIQUE',
+                       TOUT='OUI'),
+                       MAILLAGE = mesh)
+
+# Set material field
+matf = AFFE_MATERIAU(AFFE=_F(MATER=(mater, ),
+                            TOUT='OUI'),
+                    MODELE = mode)
+# }}}
+
+# Set variables that depend on whether this is the first run {{{
+if (os.path.isfile(workDir + meshSizeFile)):
+    # Find out if the previous run failed in convergence
+    accFail = False
+    try:
+        with open(workDir + '/nonConvergence.txt', 'r') as File:
+            line = File.readline()
+        if line == 'true':
+            accFail = True
+        os.system('rm ' + workDir + '/nonConvergence.txt')
+    except:
+        pass
+    # Get last iteration
+    with open(workDir + meshSizeFile, 'r') as inFile:
+        line = inFile.readlines()
+    line = line[-1]
+    line = line.split(',')
+    line = line[0]
+    ite = eval(line)
+    # Get best contact pressure
+    with open(workDir + repoFile, 'r') as inFile:
+        lines = inFile.readlines()
+    line = lines[1:]
+    line = [lin_.split(',') for lin_ in line]
+    line = np.array([[eval(val) for val in lin_] for lin_ in line])
+    line = line[:,1]
+    bestContPre = line.min()
+    # Get contact length
+    line = lines[-1]
+    line = line.split(',')
+    line = line[4]
+else:
+    ite = 0
+    accFail = False
+    bestContPre = 1e20
+    # Initialisation of mesh size file
+    with open(workDir + meshSizeFile, 'w') as inFile:
+        inFile.write('# Ite, wpMaxContLength, reacForce, estimLeftTime, timeTaken\n')
+    # Initialisation of report file
+    with open(workDir + repoFile, 'w') as inFile:
+        inFile.write('# Ite*abs(alpha), maxContP, maxVonMises, minHyd, contArea, Rv, Rp\n')
+    # Initialisation of contact area
+    wp_cont_max_length = -1
+# }}}
+
+# Compute distance between contacting contours and move if necessary {{{
+mail_py = MAIL_PY()
+mail_py.FromAster(mesh)
+listEleSetNames = list(mail_py.gma.keys())
+vtkmesh = fm2.MeshFromMail_Py(mail_py, *listEleSetNames)
+_, wpNods = vtkmesh.ElementSetNodes(wp_cont_Name + '_lines')
+_, bsNods = vtkmesh.ElementSetNodes(base_cont_Name + '_lines')
+# Find the y coordinate of the contact node at x = 0.0
+for node in wpNods:
+    if abs(node[0]) < 1.e-6:
+        wp_y = node[1]
+# Find y coordinates at x = 0
+for node in bsNods:
+    if abs(node[0]) < 1.e-6:
+        bs_y = node[1]
+dist_wp_bs = wp_y - bs_y
+if dist_wp_bs > - lcMin:
+    # Move mesh
+    reloc = CREA_CHAMP(TYPE_CHAM = 'NOEU_DEPL_R',
+                       OPERATION = 'AFFE',
+                       MAILLAGE = mesh,
+                       AFFE = (_F(TOUT = 'OUI',
+                                  NOM_CMP = ('DX', 'DY'),
+                                  VALE = (0.0, 0.0)),
+                               _F(GROUP_MA = wpName,
+                                  NOM_CMP = 'DY',
+                                  VALE = -(dist_wp_bs + lcMin))))
+    mesh = MODI_MAILLAGE(reuse = mesh,
+                         MAILLAGE = mesh,
+                         DEFORME = (_F(OPTION = 'TRAN',
+                                       DEPL = reloc)))
+    DETRUIRE(CONCEPT = (_F(NOM = reloc)))
+# }}}
+
+# Setup mesh and define loads {{{
+mesh = DEFI_GROUP(CREA_GROUP_NO = (_F(GROUP_MA = (wp_cont_Name),
+                                      NOM = wp_cont_Name,
+                                      OPTION = 'NOEUD_ORDO')),
+                  MAILLAGE = mesh,
+                  reuse = mesh)
+mesh = DEFI_GROUP(CREA_GROUP_NO = (_F(GROUP_MA = (base_cont_Name),
+                                      NOM = base_cont_Name,
+                                      OPTION = 'NOEUD_ORDO')),
+                  MAILLAGE = mesh,
+                  reuse = mesh)
+mesh = DEFI_GROUP(CREA_GROUP_NO = (_F(GROUP_MA = (wpName))),
+                  MAILLAGE = mesh,
+                  reuse = mesh)
+mesh = DEFI_GROUP(CREA_GROUP_NO = (_F(GROUP_MA = base_y0_Name +
+                                                 base_x0_Name +
+                                                 wp_x0_Name +
+                                                 wp_load_Name)),
+                  MAILLAGE = mesh,
+                  reuse = mesh)
+
+mesh = DEFI_GROUP(CREA_GROUP_NO = _F(INTERSEC = base_NoGy_int_Name,
+                                     NOM = bsNoGrw_y_Name),
+                  MAILLAGE = mesh,
+                  reuse = mesh)
+mesh = DEFI_GROUP(CREA_GROUP_NO = _F(INTERSEC = wp_NoGy_int_Name,
+                                     NOM = wpNoGrw_y_Name),
+                  MAILLAGE = mesh,
+                  reuse = mesh)
+
+# Set loads
+disp = AFFE_CHAR_MECA(DDL_IMPO=(_F(DX = 0.0,
+                                   GROUP_MA = base_x0_Name + wp_x0_Name),
+                                _F(DY = 0.0,
+                                   GROUP_MA = base_y0_Name)),
+                      MODELE=mode)
+disp1 = AFFE_CHAR_MECA(DDL_IMPO=(_F(DX = 0.0,
+                                    GROUP_MA = base_x0_Name + wp_x0_Name),
+                                 _F(DY = 0.0,
+                                    GROUP_NO = (wpNoGrw_y_Name,
+                                                bsNoGrw_y_Name))),
+                       LIAISON_UNIF = (_F(DDL = ('DY'),
+                                         GROUP_MA = wp_load_Name),
+                                       _F(DDL = ('DY'),
+                                         GROUP_MA = base_y0_Name)),
+                       MODELE=mode)
+
+#  Contact
+contact = DEFI_CONTACT(FORMULATION='CONTINUE',
+                       MODELE=mode,
+                       ALGO_RESO_GEOM = 'NEWTON',
+                       ALGO_RESO_CONT = 'NEWTON',
+                       ZONE=_F(GROUP_MA_MAIT=(base_cont_Name),
+                               GROUP_MA_ESCL=(wp_cont_Name),
+                               ALGO_CONT = 'LAC',
+                               CONTACT_INIT = 'INTERPENETRE'))
+
+func = DEFI_FONCTION(NOM_PARA='INST',
+                     VALE=(0.0, 0.0, 1.0, 1.0))
+# }}}
+
+# Code-aster formulas and fields of functions {{{
+#  Hydrostatic stress field
+Shyd_f = FORMULE(NOM_PARA = ('SIXX', 'SIYY', 'SIZZ'),
+                 VALE = 'Shyd(SIXX, SIYY, SIZZ)',
+                 Shyd = mdf.Shyd_pln_strain)
+Svon_f = FORMULE(NOM_PARA = ('SIXX', 'SIYY', 'SIZZ', 'SIXY'),
+                 VALE = 'Svon(SIXX, SIYY, SIZZ, SIXY)',
+                 Svon = mdf.Svmis_pln_strain)
+#  Displacement
+dispxf = FORMULE(NOM_PARA = ('DX'), VALE = 'DX')
+dispyf = FORMULE(NOM_PARA = ('DY'), VALE = 'DY')
+dispzero = FORMULE(NOM_PARA = ('DX','DY'), VALE = '0')
+
+# Fields of functions
+#  Displacement
+disp_f = CREA_CHAMP(OPERATION = 'AFFE',
+                    TYPE_CHAM = 'NOEU_NEUT_F',
+                    MODELE = mode,
+                    AFFE = (_F(GROUP_MA = wpName,
+                               NOM_CMP = ('X1', 'X2'),
+                               VALE_F = (dispxf, dispyf)),
+                            _F(GROUP_MA = baseName,
+                               NOM_CMP = ('X1', 'X2'),
+                               VALE_F = (dispzero, dispzero))))
+# }}}
+
+# Bio-inspired growth iterations {{{
+ite += 1
+for k1 in range(numItes):
+    # First block (unfortunately we need two)
+    shallWeBreak = ComputeIteration()
+    if shallWeBreak:
+        break
+# }}}
+
+# Save files to reconstruct the domains {{{
+for k2 in range(numGroups):
+    SaveContour(U, recoFileNames[k2], recoGroupNames[k2])
+# }}}
+FIN()
+# }}}

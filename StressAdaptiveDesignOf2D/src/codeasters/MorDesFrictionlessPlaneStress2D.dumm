@@ -8,8 +8,7 @@ from Utilitai.partition import *
 import time
 
 # In-house modules
-# CARE MUST BE TAKEN! The exact path must be provided
-sys.path.append(os.getenv('HOME') + '/Documents/Codes/BioDesign_ANR/ABioinspiredGrowthFunction/Codes/PythonUtilities')
+sys.path.append('#srcDir/PythonUtilities')
 import MorphoDesignFunctions as mdf
 from FemMesh2D import FemMesh2D as fm2
 from FemVtk import FemVtk as fvt
@@ -41,13 +40,18 @@ def SaveContour(Unit, fileName, groupName, inst = None):
 # Compute iteration {{{
 def ComputeIteration():
     # Set global variables {{{
-    global bestContPre
+    global bestRp
     global U
     global mesh
     global ite
+    global wp_cont_max_length
     global toGrw
     global accFail
+    global preContArea
+    global precoef
     # }}}
+    # Get start time
+    startTime = time.time()
 
     # Stress field to induce growth {{{
     # Move mesh upper mesh so that it is in penetration with the lower
@@ -65,73 +69,56 @@ def ComputeIteration():
                          MAILLAGE = mesh,
                          DEFORME = (_F(OPTION = 'TRAN',
                                        DEPL = reloc1)))
-    # Get start time
-    startTime = time.time()
     # Set the load as St/Area {Remember  Code_aster applies a pressure
     # not a force}
     mail_py = MAIL_PY()
     mail_py.FromAster(mesh)
-    lenLoad = mdf.Length1DElementGroup(mail_py, wp_load_Name)
-    load = AFFE_CHAR_MECA(FORCE_CONTOUR=_F(FY = -loadF/lenLoad,
-                                           GROUP_MA=(wp_load_Name, )),
-                          MODELE=mode)
+    if len(wp_load_Name) == 1:
+        lenLoad = mdf.Length1DElementGroup(mail_py, wp_load_Name[0])
+        load = AFFE_CHAR_MECA(FORCE_CONTOUR=_F(FY = -loadF/lenLoad,
+                                               GROUP_MA=wp_load_Name),
+                              MODELE=mode)
+    else:
+        print("Error: the code is not ready to deal with several wp_load_Name. Though you can modify it.")
+        raise
     # Solution with external forces
-    fail = True
-    steps = minSteps
-    # Load steps
-    listr = DEFI_LIST_REEL(DEBUT=0.0,
-                           INTERVALLE=_F(JUSQU_A=1.0,
-                                         NOMBRE=steps))
-    while fail:
-        try:
-            resu = STAT_NON_LINE(CHAM_MATER=matf,
-                                 COMPORTEMENT=_F(TOUT='OUI',
-                                                 DEFORMATION='PETIT',
-                                                 RESI_CPLAN_RELA=1.E-06,
-                                                 RESI_INTE_RELA=1.E-06,
-                                                 ITER_INTE_MAXI = maxNewton,
-                                                 ITER_INTE_PAS=0,
-                                                 RELATION='ELAS',
-                                                 ITER_CPLAN_MAXI=5,
-                                                 SYME_MATR_TANG='OUI',
-                                                 PARM_THETA=1.0,),
-                                 CONTACT=contact,
-                                 CONVERGENCE=_F(ITER_GLOB_MAXI =
-                                                maxNewton,
-                                                RESI_GLOB_MAXI = 1E-6),
-                                 EXCIT=(_F(CHARGE = load,
-                                           FONC_MULT = func),
-                                        _F(CHARGE = disp)),
-                                 INCREMENT=_F(LIST_INST=listr,
-                                             PRECISION=1.E-06),
-                                 METHODE='NEWTON',
-                                 INFO = 1,
-                                 MODELE=mode,
-                                 NEWTON=_F(REAC_ITER=1,
-                                           REAC_ITER_ELAS=1,
-                                           PREDICTION = 'TANGENTE'),
-                                 ARCHIVAGE=_F(PRECISION=1.E-06,
-                                              CRITERE='RELATIF',)
-                                 )
-            fail = False
-            DETRUIRE(CONCEPT = (_F(NOM = listr)))
-        except:
-            steps *= 2
-            if steps > maxSteps:
-                if accFail:
-                    raise("Error: Accumulated fail")
-                with open(workDir + '/nonConvergence.txt', 'w') as File:
-                    File.write('true')
-                return True
-            else:
-                DETRUIRE(CONCEPT = (_F(NOM = listr)))
-                try:
-                    DETRUIRE(CONCEPT = (_F(NOM = resu)))
-                except:
-                    pass
-                listr = DEFI_LIST_REEL(DEBUT=0.0,
-                                       INTERVALLE=_F(JUSQU_A=1.0,
-                                                     NOMBRE=steps))
+    try:
+        resu = STAT_NON_LINE(CHAM_MATER=matf,
+                             COMPORTEMENT=_F(TOUT='OUI',
+                                             DEFORMATION='PETIT',
+                                             RESI_CPLAN_RELA=1.E-06,
+                                             RESI_INTE_RELA=1.E-06,
+                                             ITER_INTE_MAXI = maxNewton,
+                                             ITER_INTE_PAS=0,
+                                             RELATION='ELAS',
+                                             ITER_CPLAN_MAXI=5,
+                                             SYME_MATR_TANG='OUI',
+                                             PARM_THETA=1.0,),
+                             CONTACT=contact,
+                             CONVERGENCE=_F(ITER_GLOB_MAXI =
+                                            maxNewton,
+                                            RESI_GLOB_MAXI = 1E-6),
+                             EXCIT=(_F(CHARGE = load,
+                                       FONC_MULT = func),
+                                    _F(CHARGE = disp)),
+                             INCREMENT=_F(LIST_INST=defsteps,
+                                         PRECISION=1.E-06),
+                             METHODE='NEWTON',
+                             INFO = 1,
+                             MODELE=mode,
+                             NEWTON=_F(REAC_ITER=1,
+                                       REAC_ITER_ELAS=1,
+                                       PREDICTION = 'ELASTIQUE'),
+                             ARCHIVAGE=_F(PRECISION=1.E-06,
+                                          CRITERE='RELATIF',)
+                             )
+        fail = False
+    except:
+        if accFail:
+            raise("Error: Accumulated fail")
+        with open(workDir + '/nonConvergence.txt', 'w') as File:
+            File.write('true')
+        return True
     accFail = False
     movedMesh = MAIL_PY()
     movedMesh.FromAster(mesh)
@@ -214,7 +201,7 @@ def ComputeIteration():
     lags_c = np.array([-p for p in lags_c])
     lags_c = np.array([abs(p) for p in lags_c])
     maxContP = lags_c.max()
-    Qp = mdf.Qp_OrderedData(absc_curv, lags_c, contArea, loadF,
+    Rp = mdf.Rp_OrderedData(absc_curv, lags_c, contArea, loadF,
             atEnd = True)
     # Compute shear stress
     vonStr = CREA_CHAMP(TYPE_CHAM = 'NOEU_NEUT_R',
@@ -227,15 +214,15 @@ def ComputeIteration():
     #  Growth stress functions
     maxSigHydCom = abs(min(sigHydwp))
     maxTau = max(tauMiswp)
-    Qv = 1.0 - (maxTau - tauRef)/(maxTau + tauRef)
+    Rv = 1.0 - (maxTau - tauRef)/(maxTau + tauRef)
     Sgrw_f  = FORMULE(NOM_PARA = ('X1', 'X2'),
-                      VALE = 'func(X1/maxSig, X2/maxTau, alp, Qp, Qv, eta, shrlim = shrlim, hydlim = hydlim, vel = vel)',
+                      VALE = 'func(X1/maxSig, X2/maxTau, alp, Rp, Rv, eta, shrlim = shrlim, hydlim = hydlim, vel = vel)',
                       func = mdf.SgrowthDesign,
                       maxSig = maxSigHydCom,
                       maxTau = maxTau,
                       alp = alpha,
-                      Qp = Qp,
-                      Qv = Qv,
+                      Rp = Rp,
+                      Rv = Rv,
                       eta = eta,
                       hydlim = sigLim,
                       shrlim = tauLim,
@@ -255,29 +242,32 @@ def ComputeIteration():
                         RESULTAT = resu,
                         INST = 1)
 
-    # Apply stress only at the soft domain
-    toGrw = CREA_CHAMP(OPERATION = 'EVAL',
-                       TYPE_CHAM = 'NOEU_NEUT_R',
-                       CHAM_F = toGrw_f,
-                       CHAM_PARA = (grw_fi, toGrw0),)
-    # Get field norm
-    grwStr = toGrw.EXTR_COMP('', [], topo = 1)
+    # Get field in data
+    grwStr = grw_fi.EXTR_COMP('', [], topo = 1)
     mesh_2d = fm2.MeshFromMail_Py(mail_py, surfName)
     grwStr_data = np.zeros(mesh_2d.nodes.numNods)
     for k1 in range(grwStr.valeurs.size):
         grwStr_data[grwStr.noeud[k1] - 1] = grwStr.valeurs[k1]
-    grwStrVtk = fvt(mesh_2d)
-    grwStrVtk.add_data(grwStr_data, "growthData")
-    grwNorm = grwStrVtk.LpNormScalar(0)
+    # Set coefficient \beta if necessary
+    if abs(abs(eta) - 0.00001) < 0.0:
+        coef = 1.0
+    else:
+        #grwStrVtk = fvt(mesh_2d)
+        #grwStrVtk.add_data(grwStr_data, "growthData")
+        #grwNorm = grwStrVtk.LpNormScalar(0)
+        #coef = abs(alpha)/grwNorm
+        if preContArea > 0.0:
+            deltaAite = abs(contArea - preContArea)
+            coef = precoef*DeltaA/deltaAite
+        else:
+            coef = 1.0
+        preContArea = contArea
+        precoef = coef
     # Scale field with the norm
     toGrwSca = CREA_CHAMP(OPERATION = 'COMB',
                           TYPE_CHAM = 'NOEU_NEUT_R',
-                          COMB = (_F(CHAM_GD = toGrw,
-# Change COEF_R when analysing the impact of the parameters.
-# For the design case, it is necessary to keep untouched the growth.
-# Thus, the evolution arrives to a stable state.
-#                                    COEF_R = abs(alpha)/grwNorm)))
-                                    COEF_R = 1.0)))
+                          COMB = (_F(CHAM_GD = grw_fi,
+                                    COEF_R = coef)))
     grwStr = toGrwSca.EXTR_COMP('', [], topo = 1)
     grwStr_data = np.zeros(mesh_2d.nodes.numNods)
     for k1 in range(grwStr.valeurs.size):
@@ -287,21 +277,21 @@ def ComputeIteration():
     growth_t = CREA_CHAMP(OPERATION = 'ASSE',
                           TYPE_CHAM = 'NOEU_SIEF_R',
                           MODELE = mode,
-                          ASSE = (_F(TOUT = 'OUI',
+                          ASSE = (_F(GROUP_MA = wpName,
                                     CHAM_GD = toGrwSca,
-                                    NOM_CMP = ('X10'),
+                                    NOM_CMP = ('X1'),
                                     NOM_CMP_RESU = ('SIXX')),
-                                  _F(TOUT = 'OUI',
+                                  _F(GROUP_MA = wpName,
                                     CHAM_GD = toGrwSca,
-                                    NOM_CMP = ('X10'),
+                                    NOM_CMP = ('X1'),
                                     NOM_CMP_RESU = ('SIYY')),),)
     #}}}
 
     # Compare with previous best results {{{
     # Update best result
-    if maxContP < bestContPre:
+    if Rp > bestRp:
         # Update value
-        bestContPre = maxContP
+        bestRp = Rp
         # Create result
         # Delete previus best result
         try:
@@ -332,7 +322,7 @@ def ComputeIteration():
         vtkResults.add_data(tauMis, "tauMis")
         vtkResults.add_data(sigHyd, "sigHyd")
         vtkResults.add_data(fvt.FromVoigtToTensor(stresses_tensor,
-            'plane-strain'), 'stress')
+            '2D'), 'stress')
         resuFileName = workDir + bestResuFile
         vtkResults.WriteVtk(resuFileName)
         DETRUIRE(CONCEPT = (_F(NOM = stresses)))
@@ -378,7 +368,7 @@ def ComputeIteration():
         vtkResults.add_data(grwStr_data, "growthData")
         vtkResults.add_data(disp_field, "disp")
         vtkResults.add_data(fvt.FromVoigtToTensor(stresses_tensor,
-            'plane-strain'), 'stress')
+            '2D'), 'stress')
         resuFileName = resuName + str(int(ite*abs(alpha))) + resuExt
         vtkResults.WriteVtk(resuFileName)
         DETRUIRE(CONCEPT = (_F(NOM = stresses),
@@ -411,7 +401,6 @@ def ComputeIteration():
     disp_ap1 = CREA_CHAMP(TYPE_CHAM = 'NOEU_DEPL_R',
                           OPERATION = 'EXTR',
                           RESULTAT = resu,
-                          #INST = 1,
                           NOM_CHAM = 'DEPL')
     disp_ap2 = CREA_CHAMP(TYPE_CHAM = 'NOEU_NEUT_R',
                           OPERATION = 'EVAL',
@@ -428,28 +417,28 @@ def ComputeIteration():
                          MAILLAGE = mesh,
                          DEFORME = (_F(OPTION = 'TRAN',
                                        DEPL = disp_ap3)))
-    # Compute the time taken by the iteration
-    endTime = time.time()
-    timeTaken = endTime - startTime
-    leftTime = timeTaken*(numItes - ite)
     # Update contours
     for k2 in range(numGroups):
         SaveContour(U, recoFileNames[k2], recoGroupNames[k2])
     # }}}
 
-    # Test elements and write reports {{{
+    # Test elements {{{
     # Contact area
     mail_py = MAIL_PY()
     mail_py.FromAster(mesh)
     wp_cont_length = contArea
     # Write report
+    # Compute the time taken by the iteration
+    endTime = time.time()
+    timeTaken = endTime - startTime
+    leftTime = timeTaken*(numItes - ite)
     with open(workDir + meshSizeFile, 'a') as inFile:
-        inFile.write('%8d, %8e, %8e, %g\n' % (ite,
-            maxInContactLength, reaForce, leftTime))
+        inFile.write('%8d, %8e, %8e, %8e, %8e\n' % (ite,
+            maxInContactLength, reaForce, leftTime, timeTaken))
     with open(workDir + repoFile, 'a') as inFile:
         inFile.write(('%8f, %8f, %8f, %8f, %8f, %8f, %8f\n') %
-                (ite*abs(alpha), maxContP, max(tauMiswp), min(sigHydwp),
-                    contArea, Qv, Qp))
+                (ite*abs(alpha), maxContP, max(tauMiswp), -min(sigHydwp),
+                    contArea, Rv, Rp))
     # Remesh if necessary
     if (maxInContactLength > lcMin*lcLimFactor) :
         # Stop if the boundary elements are too large.
@@ -464,7 +453,6 @@ def ComputeIteration():
     # }}}
 
     # Destroy concepts {{{
-    DETRUIRE(CONCEPT = (_F(NOM = toGrw)))
     DETRUIRE(CONCEPT = (_F(NOM = toGrwSca)))
 
     DETRUIRE(CONCEPT = (_F(NOM = resu),
@@ -489,11 +477,42 @@ def ComputeIteration():
     # }}}
     return False
     # }}}
+
+# Make mesh group tuple {{{
+def MakeMeshGroupTuple(ids, source):
+    tup = []
+    for ID in ids:
+        tup.append(source[ID])
+    return tuple(tup)
+# }}}
 # }}}
 
 # Parameters {{{
+# Default {{{
 workDir = '#workDir'
 parFile = '#parFile'
+# Mesh {{{
+surfName        = "_surfs"
+bsNoGrw_y_Name  = "_bsNoGy"
+wpNoGrw_y_Name  = "_wpNoGy"
+# }}}
+# File name parameters {{{
+resuFile        = "/results.vtk"
+repoFile        = "/report.tab"
+bestPresFile    = "/bestPressure.tab"
+bestResuFile    = "/bestResu.vtk"
+resuFolder      = "/RESULTS"
+recoFolder      = "/RECONSTRUCTION"
+meshSizeFile    = "/meshSize.tab"
+presResuFile    = "/pressure.tab"
+contourFile     = "/contour"
+
+resuName, resuExt = os.path.splitext(workDir + resuFolder + resuFile)
+presResuName, presResuExt = os.path.splitext(workDir + resuFolder +
+        presResuFile)
+# }}}
+# }}}
+# External {{{
 with open(parFile, 'r') as inFile:
     params = json.load(inFile)
 # Get each block of parameters {{{
@@ -502,11 +521,17 @@ fileNamesParams = params["fileNames"]
 modelParams     = params["model"]
 meshParams      = params["mesh"]
 # }}}
+# File name parameters {{{
+geomFile        = fileNamesParams["geomFile"]
+geomFile, geomFileExt = os.path.splitext(geomFile)
+meshGroupFileName = fileNamesParams["meshGroupFileName"]
+# }}}
 # Model parameters {{{
 loadF           = modelParams["loadF"]
 St              = modelParams["St"]
 nu              = modelParams["nu"]
 alpha           = modelParams["alpha"]
+DeltaA         = modelParams["DeltaA"]
 tauLim          = modelParams["tauLim"]
 sigLim          = modelParams["sigLim"]
 vel             = modelParams["vel"]
@@ -525,47 +550,46 @@ if not numItes%prints == 0:
 printAt = int(numItes/prints)
 # }}}
 # Mesh parameters {{{
-baseGroups      = meshParams["baseGroups"]
-wpGroups        = meshParams["wpGroups"]
-surfName        = meshParams["surfName"]
 lcMin           = meshParams["lcMin"]
 lcLimFactor     = meshParams["lcLimFactor"]
 lcLim = lcLimFactor*lcMin
-base_x0_Name    = baseGroups[0]
-base_y0_Name    = baseGroups[1]
-base_cont_Name  = baseGroups[2]
-baseName        = baseGroups[3]
-wp_x0_Name      = wpGroups[0]
-wp_load_Name    = wpGroups[1]
-wp_cont_Name    = wpGroups[2]
-wpName          = wpGroups[3]
-# }}}
-# file name parameters {{{
-geomFile        = fileNamesParams["geomFile"]
-resuFile        = fileNamesParams["resuFile"]
-repoFile        = fileNamesParams["repoFile"]
-bestPresFile    = fileNamesParams["bestPresFile"]
-bestResuFile    = fileNamesParams["bestResuFile"]
-resuFolder      = fileNamesParams["resuFolder"]
-recoFolder      = fileNamesParams["recoFolder"]
-meshSizeFile    = fileNamesParams["meshSizeFile"]
-presResuFile    = fileNamesParams["presResuFile"]
-contourFile     = fileNamesParams["contourFile"]
+with open(workDir + meshGroupFileName, 'r') as ifile:
+    meshGroups = json.load(ifile)
+wpGroups = meshGroups["wpGroups"]
+wpx0ids  = meshGroups["wpx0ids"]
+wpldids  = meshGroups["wpldids"]
+wpcntid  = meshGroups["wpcntid"]
+wpnmid   = meshGroups["wpnmid"]
+wpNoGy_int_ids = meshGroups["wpNoGy_int_ids"]
+bsGroups = meshGroups["bsGroups"]
+bsy0ids = meshGroups["bsy0ids"]
+bsx0ids = meshGroups["bsx0ids"]
+bscntid = meshGroups["bscntid"]
+bsnmid  = meshGroups["bsnmid"]
+bsNoGy_int_ids = meshGroups["bsNoGy_int_ids"]
 
-geomFile, geomFileExt = os.path.splitext(geomFile)
-resuName, resuExt = os.path.splitext(workDir + resuFolder + resuFile)
-presResuName, presResuExt = os.path.splitext(workDir + resuFolder +
-        presResuFile)
+base_y0_Name    = MakeMeshGroupTuple(bsy0ids, bsGroups)
+base_x0_Name    = MakeMeshGroupTuple(bsx0ids, bsGroups)
+base_cont_Name  = bsGroups[bscntid]
+baseName        = bsGroups[bsnmid]
+base_NoGy_int_Name = MakeMeshGroupTuple(bsNoGy_int_ids, bsGroups)
+wp_x0_Name      = MakeMeshGroupTuple(wpx0ids, wpGroups)
+wp_load_Name    = MakeMeshGroupTuple(wpldids, wpGroups)
+wp_cont_Name    = wpGroups[wpcntid]
+wpName          = wpGroups[wpnmid]
+wp_NoGy_int_Name = MakeMeshGroupTuple(wpNoGy_int_ids, wpGroups)
 # }}}
 # Reconstruction files {{{
-numGroups = len(wpGroups) - 1
-recoFileNames = [None]*numGroups
+contourGroups = wpGroups[:-1] + bsGroups[:-1]
+numGroups = len(contourGroups)
+recoFileNames =  [None]*numGroups
 recoGroupNames = [None]*numGroups
 i = 0
-for k1 in range(len(wpGroups) - 1):
+for k1 in range(numGroups):
     ii = i + k1
-    recoFileNames[ii] = workDir + recoFolder + '/' + wpGroups[k1] + '.msh'
-    recoGroupNames[ii] = wpGroups[k1]
+    recoFileNames[ii] = workDir + recoFolder + '/' + contourGroups[k1] + '.msh'
+    recoGroupNames[ii] = contourGroups[k1]
+# }}}
 # }}}
 # }}}
 
@@ -613,7 +637,7 @@ mesh = DEFI_GROUP(MAILLAGE = mesh,
                   reuse = mesh)
 
 # Set model
-mode = AFFE_MODELE(AFFE=_F(MODELISATION=('D_PLAN', ),
+mode = AFFE_MODELE(AFFE=_F(MODELISATION=('C_PLAN', ),
                        PHENOMENE='MECANIQUE',
                        TOUT='OUI'),
                        MAILLAGE = mesh)
@@ -649,59 +673,39 @@ if (os.path.isfile(workDir + meshSizeFile)):
     line = lines[1:]
     line = [lin_.split(',') for lin_ in line]
     line = np.array([[eval(val) for val in lin_] for lin_ in line])
-    line = line[:,1]
-    bestContPre = line.min()
+    line = line[:, 6]
+    bestRp = line.min()
+    # Get contact length
+    line = lines[-1]
+    line = line.split(',')
+    line = line[4]
 else:
     ite = 0
     accFail = False
-    bestContPre = 1e20
+    bestRp = 0.0
     # Initialisation of mesh size file
     with open(workDir + meshSizeFile, 'w') as inFile:
-        inFile.write('# Ite, wpMaxContLength, reacForce, estimLeftTime\n')
+        inFile.write('# Ite, wpMaxContLength, reacForce, estimLeftTime, timeTaken\n')
     # Initialisation of report file
     with open(workDir + repoFile, 'w') as inFile:
-        inFile.write('# Ite*abs(alpha), maxContP, maxVonMises, minHyd, contArea, Qv, Qp\n')
+        inFile.write('# Ite*abs(alpha), maxContP, maxVonMises, minHyd, contArea, Rv, Rp\n')
+    # Initialisation of contact area
+    wp_cont_max_length = -1
+preContArea = -1.0
+precoef = 1.0
 # }}}
 
-# Initial soft field (where the domain can grow) {{{
-# Find the y coordinate of the contact node at x = 0.0
+# Compute distance between contacting contours and move if necessary {{{
 mail_py = MAIL_PY()
 mail_py.FromAster(mesh)
 listEleSetNames = list(mail_py.gma.keys())
 vtkmesh = fm2.MeshFromMail_Py(mail_py, *listEleSetNames)
 _, wpNods = vtkmesh.ElementSetNodes(wp_cont_Name + '_lines')
+_, bsNods = vtkmesh.ElementSetNodes(base_cont_Name + '_lines')
+# Find the y coordinate of the contact node at x = 0.0
 for node in wpNods:
     if abs(node[0]) < 1.e-6:
         wp_y = node[1]
-# Set thresholds (too high so that it has no influence)
-thr1 = wp_y + 1000.0
-thr2 = wp_y + 1001.0
-toG_fun = FORMULE(NOM_PARA = ('Y'),
-                  VALE = 'func(Y, t1, t2)',
-                  func = mdf.SigmoidThresholds,
-                  t1 = thr1,
-                  t2 = thr2)
-meshInfo = CREA_CHAMP(OPERATION = 'EXTR',
-                     TYPE_CHAM = 'NOEU_GEOM_R',
-                     NOM_CHAM = 'GEOMETRIE',
-                     MAILLAGE = mesh)
-toGrw_f = CREA_CHAMP(OPERATION = 'AFFE',
-                  TYPE_CHAM =  'NOEU_NEUT_F',
-                  MODELE = mode,
-                  AFFE = _F(NOM_CMP = ("X10"),
-                            TOUT = 'OUI',
-                            VALE_F = toG_fun),)
-toGrw0 = CREA_CHAMP(OPERATION = 'EVAL',
-                    TYPE_CHAM = 'NOEU_NEUT_R',
-                    CHAM_F = toGrw_f,
-                    CHAM_PARA = (meshInfo),)
-DETRUIRE(CONCEPT = (_F(NOM = toGrw_f)))
-DETRUIRE(CONCEPT = (_F(NOM = meshInfo)))
-DETRUIRE(CONCEPT = (_F(NOM = toG_fun)))
-# }}}
-
-# Compute distance between contacting contours and move if necessary {{{
-_, bsNods = vtkmesh.ElementSetNodes(base_cont_Name + '_lines')
 # Find y coordinates at x = 0
 for node in bsNods:
     if abs(node[0]) < 1.e-6:
@@ -739,23 +743,37 @@ mesh = DEFI_GROUP(CREA_GROUP_NO = (_F(GROUP_MA = (base_cont_Name),
 mesh = DEFI_GROUP(CREA_GROUP_NO = (_F(GROUP_MA = (wpName))),
                   MAILLAGE = mesh,
                   reuse = mesh)
-mesh = DEFI_GROUP(CREA_GROUP_NO = (_F(GROUP_MA = (base_y0_Name))),
+mesh = DEFI_GROUP(CREA_GROUP_NO = (_F(GROUP_MA = base_y0_Name +
+                                                 base_x0_Name +
+                                                 wp_x0_Name +
+                                                 wp_load_Name)),
+                  MAILLAGE = mesh,
+                  reuse = mesh)
+
+mesh = DEFI_GROUP(CREA_GROUP_NO = _F(INTERSEC = base_NoGy_int_Name,
+                                     NOM = bsNoGrw_y_Name),
+                  MAILLAGE = mesh,
+                  reuse = mesh)
+mesh = DEFI_GROUP(CREA_GROUP_NO = _F(INTERSEC = wp_NoGy_int_Name,
+                                     NOM = wpNoGrw_y_Name),
                   MAILLAGE = mesh,
                   reuse = mesh)
 
 # Set loads
 disp = AFFE_CHAR_MECA(DDL_IMPO=(_F(DX = 0.0,
-                                   GROUP_MA = (base_x0_Name,
-                                               wp_x0_Name)),
+                                   GROUP_MA = base_x0_Name + wp_x0_Name),
                                 _F(DY = 0.0,
-                                   GROUP_MA = (base_y0_Name))),
+                                   GROUP_MA = base_y0_Name)),
                       MODELE=mode)
 disp1 = AFFE_CHAR_MECA(DDL_IMPO=(_F(DX = 0.0,
-                                    GROUP_MA = (base_x0_Name,
-                                                wp_x0_Name)),
+                                    GROUP_MA = base_x0_Name + wp_x0_Name),
                                  _F(DY = 0.0,
-                                    GROUP_MA = (base_y0_Name,
-                                                wp_load_Name))),
+                                    GROUP_NO = (wpNoGrw_y_Name,
+                                                bsNoGrw_y_Name))),
+                       LIAISON_UNIF = (_F(DDL = ('DY'),
+                                         GROUP_MA = wp_load_Name),
+                                       _F(DDL = ('DY'),
+                                         GROUP_MA = base_y0_Name)),
                        MODELE=mode)
 
 #  Contact
@@ -770,31 +788,31 @@ contact = DEFI_CONTACT(FORMULATION='CONTINUE',
 
 func = DEFI_FONCTION(NOM_PARA='INST',
                      VALE=(0.0, 0.0, 1.0, 1.0))
+
+listapri = DEFI_LIST_REEL(DEBUT=0.0,
+                          INTERVALLE=_F(JUSQU_A = 1.0,
+                                        NOMBRE = minSteps))
+defsteps = DEFI_LIST_INST(DEFI_LIST = _F(LIST_INST = listapri),
+                          ECHEC = _F(SUBD_METHODE = 'MANUEL',
+                                     SUBD_PAS = 2,
+                                     SUBD_PAS_MINI = 1.0/maxSteps,
+                                     SUBD_NIVEAU = maxSteps))
 # }}}
 
 # Code-aster formulas and fields of functions {{{
 #  Hydrostatic stress field
-Shyd_f = FORMULE(NOM_PARA = ('SIXX', 'SIYY', 'SIZZ'),
-                 VALE = 'Shyd(SIXX, SIYY, SIZZ)',
-                 Shyd = mdf.Shyd_pln_strain)
-Svon_f = FORMULE(NOM_PARA = ('SIXX', 'SIYY', 'SIZZ', 'SIXY'),
-                 VALE = 'Svon(SIXX, SIYY, SIZZ, SIXY)',
-                 Svon = mdf.Svmis_pln_strain)
-#  Soft domain
-toG_fun  = FORMULE(NOM_PARA = ('X1', 'X10'), VALE = 'X1*X10')
+Shyd_f = FORMULE(NOM_PARA = ('SIXX', 'SIYY'),
+                 VALE = 'Shyd(SIXX, SIYY)',
+                 Shyd = mdf.Shyd_pln_stress)
+Svon_f = FORMULE(NOM_PARA = ('SIXX', 'SIYY', 'SIXY'),
+                 VALE = 'Svon(SIXX, SIYY, SIXY)',
+                 Svon = mdf.Svmis_pln_stress)
 #  Displacement
 dispxf = FORMULE(NOM_PARA = ('DX'), VALE = 'DX')
 dispyf = FORMULE(NOM_PARA = ('DY'), VALE = 'DY')
 dispzero = FORMULE(NOM_PARA = ('DX','DY'), VALE = '0')
 
 # Fields of functions
-#  Soft domain
-toGrw_f = CREA_CHAMP(OPERATION = 'AFFE',
-                     TYPE_CHAM = 'NOEU_NEUT_F',
-                     MODELE = mode,
-                     AFFE = _F(GROUP_MA = wpName,
-                               NOM_CMP = ('X10'),
-                               VALE_F = toG_fun))
 #  Displacement
 disp_f = CREA_CHAMP(OPERATION = 'AFFE',
                     TYPE_CHAM = 'NOEU_NEUT_F',

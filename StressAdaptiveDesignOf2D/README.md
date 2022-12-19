@@ -16,14 +16,9 @@ For the execution of the algorithm use in the terminal:
     python3 RunAnalysis.py -i parameter_file.json
 
 In parameter_file.json, all the parameters necessary are provided.
-An example of it can be found in [PARAMS.json](Codes/PARAMS.json).
+An example of it can be found in [PARAMS.json](examples/PlaneStrain/PARAMS.json).
 An overview of the codes is provided in
 [Scripts.pdf](Documentation/StableVersion/Scripts.pdf)
-
-### Warning
-In line 12 of [BioInspiredGrowth.dumm](Codes/BioInspiredGrowth.dumm),
-the path of the folder [PythonUtilities](Codes/PythonUtilities) in
-your computer must be provided.
 
 ## Author
 David Hernández-Aristizábal

@@ -69,23 +69,31 @@ class FemMesh2D(object):
         # Get element sets
         eleSets = []
         for name in eleSetNames:
+            points = []
             lines = []
             triangles = []
             quadrangles = []
             eleIds = mail_py.gma[name]
             for eleId in eleIds:
                 ele = elementList[eleId]
-                if ele.size == 2:
+                if ele.size == 1:
+                    points.append(ele)
+                elif ele.size == 2:
                     lines.append(ele)
                 elif ele.size == 3:
                     triangles.append(ele)
                 elif ele.size == 4:
                     quadrangles.append(ele)
                 else:
-                    raise("Error: the type of element is not recognisable. " +
+                    print("Element set name: " + name)
+                    print("Element size: " + str(ele.size))
+                    print("Error: the type of element is not recognisable. " +
                         "Currently we have: linear edges, linear " +
                         "triangles and linear quadrangles. You can " +
                         " program other sort of elements though.")
+                    raise
+            if len(points) > 0:
+                eleSets.append((np.array(points), name + '_points'))
             if len(lines) > 0:
                 eleSets.append((np.array(lines), name + '_lines'))
             if len(triangles) > 0:
@@ -199,7 +207,11 @@ class FemMesh2D(object):
             self._conncts = conncts
             self._area = None
             # Set the type of element
-            if nnod == 2:
+            if nnod == 1:
+                self._dim = 0
+                self._type_string = "VTK_VERTEX"
+                self._type_id = 1
+            elif nnod == 2:
                 self._dim = 1
                 self._type_string = "VTK_LINE"
                 self._type_id = 3

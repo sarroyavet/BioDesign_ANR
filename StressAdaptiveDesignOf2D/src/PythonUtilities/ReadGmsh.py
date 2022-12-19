@@ -6,7 +6,6 @@ import numpy as np
 import math
 # }}}
 
-
 # GmshOutput class  {{{
 # Class to load $View information from a gmsh output file
 # $PostFormat
@@ -413,9 +412,18 @@ def OrganiseNodesIn1DMesh(nodes, elements):
         if len(nodei) == 1:
             nodei = nodei[0]
         else:
+            nodeif = nodei
             seconNodes = [ele[1] for ele in sortEles]
-            nodei = [nod for nod in firstNodes if nod not in seconNodes]
+            nodei = LeastFrequentElementsInList(seconNodes)
+            if (len(nodeif) == len(nodei)):
+                nodei = [nod for nod in firstNodes if nod not in seconNodes]
+            elif (len(nodeif) > len(nodei)):
+                nodei = [nod for nod in firstNodes if nod not in seconNodes]
+            elif (len(nodeif) < len(nodei)):
+                nodei = [nod for nod in seconNodes if nod not in firstNodes]
             if len(nodei) == 1:
+                nodei = nodei[0]
+            elif len(nodei) == 2:
                 nodei = nodei[0]
             else:
                 raise('Error: There are probably more than one contour.')
@@ -617,6 +625,24 @@ def Remesh(grpNamList, filNamList, lcList, faceNams, modelIn,
     return model
 # }}}
 
+# Remesh line {{{
+def RemeshLine(model, recoFile, lc):
+    # Read reconstruction file
+    resu = GmshOutput(recoFile)
+    nds, eles = resu.views[0].GetMeshFromLines('scalar', 0)
+    nds, eles, _ = OrganiseNodesIn1DMesh(nds, eles)
+    # Create points
+    points = []
+    for node in nds:
+        xi = node[0]
+        yi = node[1]
+        zi = node[2]
+        points.append(model.geo.addPoint(xi, yi, zi, lc))
+    # Make line
+    line = model.geo.addSpline(points)
+    return points, line
+# }}}
+
 # Define box fields with increasing mesh size {{{
 def BoxFieldsIncreasingSize(mesh, f0, x0, y0, minWidth, minHeight,
         minSize, maxSize, grwRatioX, grwRatioY, grwRatioS, numFields,
@@ -700,5 +726,111 @@ def MeshVolume1D(nodes, elements):
         z_c = n2[2] - n1[2]
         volume += math.sqrt(x_c*x_c + y_c*y_c + z_c*z_c)
     return volume
+# }}}
+
+# Define fields around an arbitrary contact line {{{
+def MeshFieldArbitraryContact(mesh, f0, curveList, xmin0, xmax0, ymin0,
+        ymax0, sizemin, grw_xmin, grw_xmax, grw_ymin, grw_ymax,
+        grw_size, sizemax, lenratio, numFields = 25, sampling = 10000,
+        VOut = 1.0):
+    # Initialisation {{{
+    fieldList = [None]*numFields
+    ff = f0
+    # }}}
+    # Make base distance field {{{
+    di_fi = ff
+    mesh.field.add("Distance", ff)
+    mesh.field.setNumbers(ff, "CurvesList", curveList)
+    mesh.field.setNumber(ff, "Sampling", sampling)
+    # }}}
+    # Make boxes and thresholds {{{
+    xmin = xmin0
+    xmax = xmax0
+    ymin = ymin0
+    ymax = ymax0
+    size = sizemin
+    for k1 in range(numFields):
+        # Set box
+        ff += 1
+        mesh.field.add("Box", ff)
+        mesh.field.setNumber(ff, "VIn"      , 0.0)
+        mesh.field.setNumber(ff, "VOut"     , VOut)
+        mesh.field.setNumber(ff, "XMin"     , xmin)
+        mesh.field.setNumber(ff, "XMax"     , xmax)
+        mesh.field.setNumber(ff, "YMin"     , ymin)
+        mesh.field.setNumber(ff, "YMax"     , ymax)
+        mesh.field.setNumber(ff, "Thickness", 0.0)
+        # Set threshold base field
+        ff += 1
+        mesh.field.add("MathEval", ff)
+        mesh.field.setString(ff, "F", "F%d + F%d" % (ff - 1, di_fi))
+        # Set mesh size field as threshold
+        ff += 1
+        fieldList[k1] = ff
+        mesh.field.add("Threshold", ff)
+        mesh.field.setNumber(ff, "InField", ff - 1)
+        mesh.field.setNumber(ff, "SizeMin", size)
+        mesh.field.setNumber(ff, "SizeMax", sizemax)
+        mesh.field.setNumber(ff, "DistMin", size*lenratio)
+        mesh.field.setNumber(ff, "DistMax", size*lenratio*2.0)
+        # Update sizes
+        xmin *= grw_xmin
+        xmax *= grw_xmax
+        ymin *= grw_ymin
+        ymax *= grw_ymax
+        size *= grw_size
+    # }}}
+    # Set thresholds as background mesh {{{
+    bacFieldNum = ff + 1
+    mesh.field.add("Min", bacFieldNum)
+    mesh.field.setNumbers(bacFieldNum, "FieldsList", fieldList)
+    mesh.field.setAsBackgroundMesh(bacFieldNum)
+    fieldList.append(bacFieldNum)
+    # }}}
+    return fieldList
+# }}}
+
+# Mesh field distance--threshold to curve {{{
+def MeshFieldDistanceCurve(mesh, f0, curveList, sizeMin, distMin,
+        sizeGrwRate, distGrwRate, sizeMax, numFields,
+        growthStyle = 'linear', sampling = 10000, at = "CurvesList"):
+    # Initialisation {{{
+    fieldList = [None]*numFields
+    ff = f0
+    # }}}
+    # Make base distance field {{{
+    di_fi = ff
+    mesh.field.add("Distance", ff)
+    mesh.field.setNumbers(ff, at, curveList)
+    mesh.field.setNumber(ff, "Sampling", sampling)
+    # }}}
+    # Thresholds {{{
+    size = sizeMin
+    dist = distMin
+    for k1 in range(numFields):
+        # Set mesh size field as threshold
+        ff += 1
+        fieldList[k1] = ff
+        mesh.field.add("Threshold", ff)
+        mesh.field.setNumber(ff, "InField", di_fi)
+        mesh.field.setNumber(ff, "SizeMin", size)
+        mesh.field.setNumber(ff, "SizeMax", sizeMax)
+        mesh.field.setNumber(ff, "DistMin", dist)
+        # Update sizes
+        if growthStyle == 'linear':
+            size += sizeMin*sizeGrwRate
+            dist += distMin*distGrwRate
+            mesh.field.setNumber(ff, "DistMax", dist)
+        else:
+            raise("Error: growth style not available")
+    # }}}
+    # Background mesh {{{
+    bacFieldNum = ff + 1
+    mesh.field.add("Min", bacFieldNum)
+    mesh.field.setNumbers(bacFieldNum, "FieldsList", fieldList)
+    mesh.field.setAsBackgroundMesh(bacFieldNum)
+    fieldList.append(bacFieldNum)
+    # }}}
+    return fieldList
 # }}}
 # }}}

@@ -28,6 +28,13 @@ class FemVtk(object):
         # for the mesh
         mesh = self.mesh
         if not(self.mesh.nodes.numNods == dataSet.shape[0]):
+            print("---------------------------------------------")
+            print("---------------------------------------------")
+            print(self.mesh.nodes.numNods)
+            print(dataSet.shape[0])
+            print(dataSet.shape)
+            print("---------------------------------------------")
+            print("---------------------------------------------")
             raise("Error: the number of nodes of dataSet must be equal " +
                     "to the number of nodes of the mesh.")
         self.data.append(FemVtk.VtkData(dataSet, dataName, dataType))
@@ -39,8 +46,7 @@ class FemVtk(object):
     def FromVoigtToTensor(voigt, model):
         """Convert a Voigt-like array into a symmetric matrix.
         Depending on the model the user should provide:
-            - for plane-stress: array([SIXX, SIYY, SIXY], ...]),
-            - for plane-strain: array([SIXX, SIYY, SIZZ, SIXY], ...]), and
+            - for 2D: array([SIXX, SIYY, SIZZ, SIXY], ...]), and
             - for 3D: array([SIXX, SIYY, SIZZ, SIXY, SIYZ, SIZX], ...])."""
         # Voigt must be a 1D numpy array
         try:
@@ -50,14 +56,12 @@ class FemVtk(object):
             raise("Error: voigt must be a 1D-numpy array")
         # Create the 3-d array for each case
         numVals = voigt.size
-        if model == 'plane-stress':
-            numComps = 3
-        elif model == 'plane-strain':
+        if model == '2D':
             numComps = 4
         elif model == '3D':
             numComps = 6
         else:
-            raise("Error: the indicated model is not available. You can use: 'plane-stress', 'plane-strain' or '3D'")
+            raise("Error: the indicated model is not available. You can use: '2D' or '3D'")
         # Assign the values
         numNods = int(numVals/numComps)
         array = []
@@ -66,18 +70,14 @@ class FemVtk(object):
             row0 = k1*numComps
             tensor[0, 0] = voigt[row0    ]
             tensor[1, 1] = voigt[row0 + 1]
-            if numComps == 3:
-                tensor[0, 1] = voigt[row0 + 2]
-                tensor[1, 0] = voigt[row0 + 2]
-            else:
-                tensor[2, 2] = voigt[row0 + 2]
-                tensor[0, 1] = voigt[row0 + 3]
-                tensor[1, 0] = voigt[row0 + 3]
-                if numComps == 6:
-                    tensor[0, 2] = voigt[row0 + 4]
-                    tensor[2, 0] = voigt[row0 + 4]
-                    tensor[1, 2] = voigt[row0 + 5]
-                    tensor[2, 1] = voigt[row0 + 5]
+            tensor[2, 2] = voigt[row0 + 2]
+            tensor[0, 1] = voigt[row0 + 3]
+            tensor[1, 0] = voigt[row0 + 3]
+            if numComps == 6:
+                tensor[0, 2] = voigt[row0 + 4]
+                tensor[2, 0] = voigt[row0 + 4]
+                tensor[1, 2] = voigt[row0 + 5]
+                tensor[2, 1] = voigt[row0 + 5]
             array.append(tensor)
         return np.array(array)
         # }}}
@@ -215,11 +215,27 @@ class FemVtk(object):
                     u += dataSet[nod]
                     x.append(coords[nod, 0])
                     y.append(coords[nod, 1])
-                u /= ele.size
-                area = fm2.Elements.FaceArea(np.array(x), np.array(y))
+                try:
+                    u /= ele.size
+                except:
+                    print("Error computing: u /= ele.size")
+                    raise
+                try:
+                    area = fm2.Elements.FaceArea(np.array(x), np.array(y))
+                except:
+                    print("Error computing: area = fm2.Elements.FaceArea(np.array(x), np.array(y))")
+                    raise
                 # Add to norm
-                norm += u**p*area
-        norm = norm**(1.0/p)
+                try:
+                    norm += u**p*area
+                except:
+                    print("Error computing: norm += u**p*area")
+                    raise
+        try:
+            norm = norm**(1.0/p)
+        except:
+            print("Error computing: norm = norm**(1.0/p)")
+            raise
         return norm
     # }}}
 

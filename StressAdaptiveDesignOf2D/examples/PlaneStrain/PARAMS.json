@@ -1,0 +1,39 @@
+{
+    "mesh": {
+        "lcMin": 0.01,
+        "lcLimFactor": 0.5,
+        "lcMax": 0.25,
+        "fine_y": 0.2,
+        "growthRatio": 4.0,
+        "lengthRatio": 10.0,
+        "geoType" : "circ",
+        "geoParams" : [4.5, 50.0]
+    },
+    "fileNames": {
+        "genGeomFile" :  "/geo_cyl_plane.py",
+        "geomFile": "/geom.unv",
+        "recGeomFile": "/geo_cyl_plane.py -r",
+        "asterFolder": "/AsterStudy",
+        "srcFolder": "{Location of the folder}/MorphoDesign/src",
+        "dummFile" : "/MorDesFrictionlessPlaneStrain2D.dumm",
+        "meshGroupFileName" : "/meshGroups.json"
+    },
+    "model": {
+        "loadF": 5.0,
+        "St": 210.0,
+        "nu": 0.3,
+        "alpha": 1.25,
+        "tauLim": 0.5,
+        "sigLim": 0.5,
+        "vel": 7.1,
+        "tauRef": 1.0,
+        "eta": 0.0,
+        "final": 200,
+        "prints": 20,
+        "maxSteps": 2,
+        "minSteps": 1,
+        "zero": 0.1,
+        "maxNewton": 50
+    },
+    "c_a_unit": 10
+}
