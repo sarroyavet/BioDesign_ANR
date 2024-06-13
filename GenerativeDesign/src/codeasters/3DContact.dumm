@@ -1,0 +1,508 @@
+# Libraries {{{
+import os
+import math
+import sys
+import json
+import numpy as np
+from Utilitai.partition import *
+import time
+import matplotlib.pyplot as plt
+import json
+from scipy.spatial import cKDTree
+from pdb import set_trace
+
+# In-house modules
+sys.path.append('#srcDir/PythonUtilities')
+from FemMesh2D import FemMesh2D as fm2
+from FemVtk import FemVtk as fvt
+import Miscellaneous as msc
+import MorphoDesignFunctions as mdf
+from PyAster import *
+from datfile import datfile
+# }}}
+
+# Functions {{{
+# Distance between set of points for a given direction {{{
+def DistancePointsOnDirection(moving_group, static_group, direction):
+    """
+    Given a set of points that might move (moving_group) in a given
+    direction, and a set of static points (static_group), this function
+    finds the first pair of points that would enter in contact following
+    the direction. Then it returns the projected distance to the
+    direction between such points. Negative distance indicates
+    interpenetration.
+    """
+    # Get size of sets
+    numMovingPoints = moving_group.shape[0]
+    numStaticPoints = static_group.shape[0]
+    # Compute the unit direction vector
+    mag_dir = np.sqrt(np.dot(direction, direction))
+    uni_dir = direction/mag_dir
+    # Find distance between each point in moving_group and static_group {{{
+    dists = np.zeros(numMovingPoints)
+    for k1 in range(numMovingPoints):
+        # Define point k1
+        pi = np.array([moving_group[k1, 0],
+                       moving_group[k1, 1],
+                       moving_group[k1, 2]])
+        # Find the direction and the perpendicular-to-direction distance
+        # between pi and each node of static_group {{{
+        l_dir_ij = np.zeros(numStaticPoints)
+        l_per_ij = np.zeros(numStaticPoints)
+        for k2 in range(numStaticPoints):
+            # Define point k2
+            rj = np.array([static_group[k2, 0],
+                           static_group[k2, 1],
+                           static_group[k2, 2]])
+            # Compute the vector from pi to rj
+            vector_ij = rj - pi
+
+
+#            vector_ij_mag = np.sqrt(np.dot(vector_ij, vector_ij))
+#            l_per_ij[k2] = vector_ij_mag
+#            l_dir_ij[k2] = np.abs(np.dot(vector_ij, uni_dir))
+
+
+
+            # Compute a vector perpendicular to direction and to
+            # vector_ij
+            no_component_ij = np.cross(uni_dir, vector_ij)
+            # Compute a unit vector perpendicular to direction and to
+            # no_component_ij
+            uni_perp_ij = np.cross(no_component_ij, uni_dir)
+            uni_perp_ij_mag = np.sqrt(np.dot(uni_perp_ij, uni_perp_ij))
+            l_dir_ij[k2] = np.dot(vector_ij, uni_dir)
+            if uni_perp_ij_mag > 0.0:
+                uni_perp_ij = uni_perp_ij/uni_perp_ij_mag
+                # Project vector_ij into direction and uni_perp_ij
+                l_per_ij[k2] = np.abs(np.dot(vector_ij, uni_perp_ij))
+            else:
+                # Project vector_ij into direction and uni_perp_ij
+                l_per_ij[k2] = 0.0
+        # }}}
+        # Get distances with the point such that might enter in contact
+        # with pi
+        ri_id = np.argmin(l_per_ij)
+        dists[k1] = l_dir_ij[ri_id]
+    # }}}
+    # Get the minimum distance
+    dist_id = np.argmin(dists)
+    dist_p_dir = dists[dist_id]
+    return dist_p_dir
+# }}}
+# }}}
+
+# Parameters {{{
+# Paths {{{
+workDir = '#workDir'
+parFile = '#parFile'
+# }}}
+# Read parameter file {{{
+with open(parFile, 'r') as inFile:
+    params = json.load(inFile)
+# Extract parameter blocks
+materialParams = params["material"]
+solverParams = params["solver"]
+contactParams = params["contact"]
+loadParams = params["loads"]
+meshParams = params["mesh"]
+fileNamesParams = params["fileNames"]
+asterParams = params["code_aster"]
+# }}}
+# Extract material parameters {{{
+E  = materialParams.get("E", 1.0e+3)
+nu = materialParams.get("nu", 0.3)
+E_esc = materialParams.get("E_esc", E)
+E_mai = materialParams.get("E_mai", E)
+nu_esc = materialParams.get("nu_esc", nu)
+nu_mai = materialParams.get("nu_mai", nu)
+# }}}
+# Extract solver parameters {{{
+maxNewton = solverParams["maxNewton"]
+maxSteps  = solverParams["maxSteps"]
+minSteps  = solverParams["minSteps"]
+# }}}
+# Extract contact parameters {{{
+esc_group = contactParams["esc_group"]
+mai_group = contactParams["mai_group"]
+load_dir = contactParams["load_dir"]
+h_interp  = contactParams["h_interp"]
+ref_points = contactParams.get("ref_points", {})
+if len(ref_points) > 0:
+    moving_point = ref_points["moving"]
+    static_point = ref_points["static"]
+contact_init = contactParams.get("contact_init", "OUI")
+cont_type = contactParams.get("cont_type", "standard")
+# }}}
+# Extract load parameters {{{
+load_FORCE_FACE = loadParams["FORCE_FACE"]
+load_DDL_IMPO   = loadParams["DDL_IMPO"]
+load_incrs      = loadParams.get("incrs", [])
+load_intervals = loadParams.get("intervals", {})
+numIncrs = len(load_incrs)
+if not numIncrs == 0:
+    if not numIncrs == len(load_FORCE_FACE) :
+        message  = "In parameters -> loads:\n"
+        message += "\tlen(incrs) must be either zero or equal to "
+        message += "len(FORCE_FACE)."
+        raise ValueError(message)
+# }}}
+# Extract mesh parameters {{{
+newGroups = meshParams.get("DEFI_GROUP", [])
+# }}}
+# Extract file parameters {{{
+geomFile = fileNamesParams["geomFile"]
+escFile = geomFile["escFile"]
+maiFile = geomFile["maiFile"]
+# }}}
+# Extract code aster parameters {{{
+U = asterParams.get("UNITE", 11)
+# }}}
+# }}}
+
+# Code aster block {{{
+# Initialisation {{{
+DEBUT(LANG = 'FR', PAR_LOT = 'NON', IMPR_MACRO = "OUI")
+# }}}
+
+# Read meshes {{{
+# Slave mesh
+DEFI_FICHIER(ACTION = 'ASSOCIER',
+             FICHIER = workDir + escFile,
+             UNITE = U)
+esc_mesh =  LIRE_MAILLAGE(FORMAT = 'MED',
+                          UNITE = U)
+DEFI_FICHIER(ACTION = 'LIBERER', UNITE = U)
+# Master mesh
+DEFI_FICHIER(ACTION = 'ASSOCIER',
+             FICHIER = workDir + maiFile,
+             UNITE = U)
+mai_mesh = LIRE_MAILLAGE(FORMAT = 'MED',
+                         UNITE = U)
+DEFI_FICHIER(ACTION = 'LIBERER', UNITE = U)
+# }}}
+
+# Set up mesh groups {{{
+# Surface groups
+DEFI_GROUP(reuse = esc_mesh,
+           MAILLAGE = esc_mesh,
+           CREA_GROUP_MA = _F(NOM = "__escSur", TOUT = "OUI"))
+DEFI_GROUP(reuse = mai_mesh,
+           MAILLAGE = mai_mesh,
+           CREA_GROUP_MA = _F(NOM = "__maiSur", TOUT = "OUI"))
+# Create contact groups if necessary {{{
+DEFI_GROUP(reuse = esc_mesh,
+           MAILLAGE = esc_mesh,
+           CREA_GROUP_MA = (_F(NOM = "__escCon",
+                               UNION = esc_group)))
+DEFI_GROUP(reuse = mai_mesh,
+           MAILLAGE = mai_mesh,
+           CREA_GROUP_MA = (_F(NOM = "__maiCon",
+                               UNION = mai_group)))
+# }}}
+# }}}
+
+# Make Mortar mesh {{{
+if cont_type == "mortar":
+    # Assemble meshes
+    uni_mesh = ASSE_MAILLAGE(MAILLAGE_1 = esc_mesh,
+                             MAILLAGE_2 = mai_mesh,
+                             OPERATION = "SUPERPOSE")
+    # Reorient the contact boundaries
+    MODI_MAILLAGE(reuse = uni_mesh,
+                  MAILLAGE = uni_mesh,
+                  ORIE_PEAU_3D = (_F(GROUP_MA = "__escCon"),
+                                  _F(GROUP_MA = "__maiCon")))
+    # Create the mortar mesh
+    mesh = CREA_MAILLAGE(MAILLAGE = uni_mesh,
+                         DECOUPE_LAC = _F(GROUP_MA_ESCL = "__escCon"))
+else:
+    # Assemble meshes
+    mesh = ASSE_MAILLAGE(MAILLAGE_1 = esc_mesh,
+                         MAILLAGE_2 = mai_mesh,
+                         OPERATION = "SUPERPOSE")
+    # Reorient the contact boundaries
+    MODI_MAILLAGE(reuse = mesh,
+                  MAILLAGE = mesh,
+                  ORIE_PEAU_3D = (_F(GROUP_MA = "__escCon"),
+                                  _F(GROUP_MA = "__maiCon")))
+# Create new groups
+DEFI_GROUP(CREA_GROUP_NO = _F(TOUT_GROUP_MA = "OUI"),
+           reuse = mesh,
+           MAILLAGE = mesh)
+if len(newGroups) > 0:
+    DEFI_GROUP(reuse = mesh,
+               MAILLAGE = mesh,
+               **newGroups)
+# }}}
+
+# Set up model and material {{{
+# Model
+model = AFFE_MODELE(AFFE = _F(MODELISATION = ('3D', ),
+                    PHENOMENE = 'MECANIQUE',
+                    TOUT = 'OUI'),
+                    MAILLAGE = mesh)
+# Material
+esc_mat = DEFI_MATERIAU(ELAS = _F(E = E_esc,
+                                  NU = nu_esc,
+                                  RHO = 1.0))
+mai_mat = DEFI_MATERIAU(ELAS = _F(E = E_mai,
+                                  NU = nu_mai,
+                                  RHO = 1.0))
+
+fieldmat = AFFE_MATERIAU(AFFE = (_F(MATER = esc_mat, GROUP_MA = "__escSur"),
+                                 _F(MATER = mai_mat, GROUP_MA = "__maiSur")),
+                         MODELE = model)
+# }}}
+
+# Add loads {{{
+# Add loads
+if numIncrs == 0:
+    # All the loads in the same increment
+    load = AFFE_CHAR_MECA(FORCE_FACE = load_FORCE_FACE,
+                          MODELE = model)
+else:
+    # Separation of load definition to define custom increments
+    load = [None]*numIncrs
+    k1 = 0
+    for force_i in load_FORCE_FACE:
+        load[k1] = AFFE_CHAR_MECA(FORCE_FACE = force_i,
+                                  MODELE = model)
+        k1 += 1
+# Add fixed displacements
+DOF = AFFE_CHAR_MECA(DDL_IMPO = load_DDL_IMPO,
+                     MODELE = model)
+# }}}
+
+# Contact definition {{{
+if cont_type == "mortar":
+    contact = DEFI_CONTACT(ALGO_RESO_CONT = 'NEWTON',
+                           ALGO_RESO_GEOM = 'NEWTON',
+                           FORMULATION = 'CONTINUE',
+                           LISSAGE = 'OUI',
+                           MODELE = model,
+                           INFO = 1,
+                           ZONE = _F(ALGO_CONT = 'LAC',
+                                     CONTACT_INIT = contact_init,
+                                     TYPE_APPA = "ROBUSTE",
+                                     GROUP_MA_ESCL = "__escCon",
+                                     GROUP_MA_MAIT = "__maiCon"))
+elif cont_type == "standard":
+    contact = DEFI_CONTACT(FORMULATION = 'CONTINUE',
+                           LISSAGE = 'OUI',
+                           MODELE = model,
+                           INFO = 1,
+                           ZONE = _F(ALGO_CONT = 'STANDARD',
+                                     CONTACT_INIT = contact_init,
+                                     GROUP_MA_ESCL = "__escCon",
+                                     GROUP_MA_MAIT = "__maiCon"))
+else:
+    raise ValueError("Not available cont_type")
+# }}}
+
+# Set up increment discretisation for nonlinear analysis {{{
+if numIncrs == 0:
+    # All loads in one increment
+    incr = DEFI_FONCTION(NOM_PARA = 'INST',
+                         VALE = (0.0, 0.0,
+                                 1.0, 1.0))
+
+    excit = [_F(CHARGE = load, FONC_MULT = incr)]
+
+    listr = DEFI_LIST_REEL(DEBUT = 0.0,
+                           INTERVALLE = _F(JUSQU_A = 1.0,
+                                           NOMBRE = minSteps))
+else:
+    # Define time increment functions
+    incr = [None]*numIncrs
+    excit = []
+    for k1 in range(numIncrs):
+        incr_i = load_incrs[k1]
+        incr[k1] = DEFI_FONCTION(NOM_PARA = 'INST',
+                                 VALE = incr_i)
+        excit.append(_F(CHARGE = load[k1], FONC_MULT = incr[k1]))
+    # Define time interval discretisation
+    if len(load_intervals) == 0:
+        # Get maximum time
+        maxInst = 0.0
+        for incr_i in load_incrs:
+            for k1 in range(len(incr_i)):
+                if k1%2 == 0:
+                    inst_i = incr_i[k1]
+                    if inst_i > maxInst:
+                        maxInst = inst_i
+        listr = DEFI_LIST_REEL(DEBUT = 0.0,
+                               INTERVALLE = _F(JUSQU_A = inst_i,
+                                               NOMBRE = minSteps))
+    else:
+        listr = DEFI_LIST_REEL(DEBUT = 0.0,
+                               INTERVALLE = load_intervals)
+
+excit.append(_F(CHARGE = DOF))
+
+defsteps = DEFI_LIST_INST(DEFI_LIST = _F(LIST_INST = listr),
+                          ECHEC = _F(SUBD_METHODE = 'MANUEL',
+                                     SUBD_PAS = 2,
+                                     SUBD_PAS_MINI = 1.0/maxSteps,
+                                     SUBD_NIVEAU = maxSteps))
+# }}}
+
+# Contact analysis {{{
+# Solve contact analysis {{{
+# Move slave to ensure initial contact {{{
+# Get mesh
+ALLdat = MAIL_PY() # Function to access mesh with python
+ALLdat.FromAster(mesh)
+node_coords = ALLdat.cn[:, :]
+# Get distance between sets of nodes
+if len(ref_points) > 0:
+    # Get static point coordinates
+    sta_nodes = []
+    gr_static = ALLdat.gno[static_point]
+    for node_id in gr_static:
+        sta_nodes.append(node_coords[node_id])
+    sta_nodes = np.array(sta_nodes)
+    # Get moving point coordinates
+    mov_nodes = []
+    gr_moving = ALLdat.gno[moving_point]
+    for node_id in gr_moving:
+        mov_nodes.append(node_coords[node_id])
+    mov_nodes = np.array(mov_nodes)
+else:
+    # Get slave nodes
+    esc_nodes = []
+    gr_name = "__escCon"
+    gr_node_i = ALLdat.gno[gr_name]
+    for node_id in gr_node_i:
+        esc_nodes.append(node_coords[node_id])
+    esc_nodes = np.array(esc_nodes)
+    # Get master nodes
+    mai_nodes = []
+    gr_name = "__maiCon"
+    gr_node_i = ALLdat.gno[gr_name]
+    for node_id in gr_node_i:
+        mai_nodes.append(node_coords[node_id])
+    mai_nodes = np.array(mai_nodes)
+    # Set static and moving points
+    mov_nodes = esc_nodes
+    sta_nodes = mai_nodes
+contact_separation = DistancePointsOnDirection(mov_nodes,
+        sta_nodes, load_dir)
+# On déplace le maillage du doigt pour qu'il soit de nouveau en
+# contact avec la surface du bati lorsque l'on réitère la simulation
+reloc_vector = []
+unreloc_vector = []
+reloc_mag = contact_separation + h_interp
+for di in load_dir:
+    reloc_vector.append(di*reloc_mag)
+    unreloc_vector.append(-di*h_interp)
+reloc = CREA_CHAMP(TYPE_CHAM = 'NOEU_DEPL_R',
+                   OPERATION = 'AFFE',
+                   MAILLAGE = mesh,
+                   AFFE = (_F(TOUT = 'OUI',
+                              NOM_CMP = ('DX', 'DY','DZ'),
+                              VALE = (0.0, 0.0, 0.0)),
+                           _F(GROUP_MA = '__escSur',
+                              NOM_CMP = ('DX', 'DY','DZ'),
+                              VALE = reloc_vector)))
+MODI_MAILLAGE(reuse = mesh,
+              MAILLAGE = mesh,
+              DEFORME = (_F(OPTION = 'TRAN',
+                            DEPL = reloc)))
+DETRUIRE(CONCEPT = (_F(NOM = reloc)))
+# }}}
+### On calcule le contact par une méthode non lineéaire et en utilisant la méthode de Newton
+try:
+    resu = STAT_NON_LINE(CHAM_MATER = fieldmat,
+          COMPORTEMENT = _F(
+                TOUT = 'OUI',
+                DEFORMATION = 'PETIT',
+                ITER_INTE_MAXI = maxNewton),
+          CONTACT = contact,
+          CONVERGENCE = _F(ITER_GLOB_MAXI = maxNewton),
+          EXCIT = excit,
+          INCREMENT = _F(LIST_INST = defsteps,
+                         PRECISION = 1.E-06),
+          INFO = 1,
+          METHODE = 'NEWTON',
+          MODELE = model,
+          NEWTON = _F(PREDICTION = 'TANGENTE'))
+except:
+    pass
+reloc = CREA_CHAMP(TYPE_CHAM = 'NOEU_DEPL_R',
+                   OPERATION = 'AFFE',
+                   MAILLAGE = mesh,
+                   AFFE = (_F(TOUT = 'OUI',
+                              NOM_CMP = ('DX', 'DY','DZ'),
+                              VALE = (0.0, 0.0, 0.0)),
+                           _F(GROUP_MA = '__escSur',
+                              NOM_CMP = ('DX', 'DY','DZ'),
+                              VALE = unreloc_vector)))
+MODI_MAILLAGE(reuse = mesh,
+              MAILLAGE = mesh,
+              DEFORME = (_F(OPTION = 'TRAN',
+                          DEPL = reloc)))
+DETRUIRE(CONCEPT = (_F(NOM = reloc)))
+# On créer un calque pour définir les paramètres que l'on souhaite observer
+resu = CALC_CHAMP(reuse = resu,
+                  RESULTAT = resu,
+                  CONTRAINTE = ('SIGM_NOEU', 'SIEF_NOEU'),
+                  CRITERES = ('SIEQ_NOEU'),
+                  TOUT_ORDRE = 'OUI')
+# }}}
+
+# Compute contact {{{
+calc_insts = resu.LIST_PARA()["INST"]
+numInsts = len(calc_insts)
+Pc = [None]*numInsts
+ti = 0.0
+cham_FFF = []
+for k1 in range(numInsts):
+    inst = calc_insts[k1]
+    Pc[k1] = CALC_PRESSION_FROM_FORMULA(
+            RESU = resu,
+            NON_DEFORMED_MESH = mesh,
+            MODELE = model,
+            GROUP_MA = ["__escCon", "__maiCon"],
+            INST = inst,
+            DIMS = 3)
+    cham_FFF.append(_F(CHAM_GD = Pc[k1],
+                       INST = inst))
+
+cham_FFF = tuple(cham_FFF)
+# }}}
+
+# Make pressure result {{{
+presResu = CREA_RESU(OPERATION = 'AFFE',
+                     AFFE = cham_FFF,
+                     NOM_CHAM = 'UT01_NOEU',
+                     TYPE_RESU = "EVOL_NOLI")
+# }}}
+# }}}
+
+# Save results {{{
+DEFI_FICHIER(ACTION = 'ASSOCIER',
+      FICHIER = workDir + '/resu.med',
+      UNITE = U)
+IMPR_RESU(FORMAT='MED',
+            UNITE = U,
+            RESU = (_F(RESULTAT = resu,
+                       TOUT_ORDRE = "OUI",
+                       NOM_CHAM = ["DEPL", "SIEQ_NOEU"])))
+DEFI_FICHIER(ACTION = 'LIBERER', UNITE = U)
+DEFI_FICHIER(ACTION = 'ASSOCIER',
+      FICHIER = workDir + '/presResu.med',
+      UNITE = U)
+IMPR_RESU(FORMAT='MED',
+            UNITE = U,
+            RESU = (_F(RESULTAT = presResu,
+                       TOUT_ORDRE = "OUI",
+                       TOUT = "OUI")))
+DEFI_FICHIER(ACTION = 'LIBERER', UNITE = U)
+# }}}
+
+# Close code aster {{{
+FIN(RETASSAGE = "OUI",
+    INFO_RESU = "NON")
+# }}}
+# }}}

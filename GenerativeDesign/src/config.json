@@ -1,0 +1,12 @@
+{
+    "fileNames" : {
+        "geomFMT"      : "unv",
+        "resuFile"      : "/results.vtk",
+        "repoFile"      : "/report.tab",
+        "resuFolder"    : "/RESULTS",
+        "recoFile"      : "/lastMesh.mail",
+        "meshSizeFile"  : "/meshSize.tab",
+        "presResuFile"  : "/pressure.tab",
+        "curveDataFile" : "/curveData.csv"
+    }
+}
