@@ -1,0 +1,80 @@
+{
+    "mesh" : {"sizeGrwRate" : 0.25,
+              "lcLimFactor": 0.75,
+              "fine_x_rate": 1.25,
+              "newgroups" : [{"CREA_GROUP_MA" : [
+                                    {"NOM" : "w_dx0",
+                                     "UNION" : ["esc_dy", "esc_dxR",
+                                                "mai_dy", "mai_dxR"]},
+                                    {"NOM" : "w_dy0",
+                                     "UNION" : ["esc_dy", "mai_dy"]}]},
+                             {"CREA_GROUP_NO" : [
+                                    {"TOUT_GROUP_MA" : "OUI"}]},
+                             {"CREA_GROUP_NO" : [
+                                    {"NOM" : "esc_p0",
+                                     "INTERSEC" : ["esc_con",
+                                                   "esc_dxM"]},
+                                    {"NOM" : "mai_p0",
+                                     "INTERSEC" : ["mai_con",
+                                                   "mai_dxM"]},
+                                    {"NOM" : "esc_pR",
+                                     "INTERSEC" : ["esc_con",
+                                                  "esc_dxR"]}]},
+                             {"CREA_GROUP_NO" : [
+                                    {"NOM" : "wear_dx0",
+                                     "DIFFE" : ["w_dx0", "esc_pR"]},
+                                    {"NOM" : "wear_dy0",
+                                     "DIFFE" : ["w_dy0", "esc_pR"]}]}]
+        },
+    "fileNames": {"geoGen": "/geometry.py",
+                  "dummFile": "/GrowthWearGeneral.dumm"},
+    "model" : {
+        "materials" : {
+            "MODELISATION" : "D_PLAN",
+            "E"  : 1.0e+3,
+            "nu" : 0.3},
+        "growthParams" : {
+            "Sr": 0.0,
+            "tauLim": 0.5,
+            "sigLim": 0.5,
+            "vel": 7.1,
+            "Wr" : 0.0,
+            "Gr_mai_factor" : 1.0},
+        "timeParams" : {
+            "deltaT": 1.0,
+            "final": 10000.0,
+            "prints": 200},
+        "algoParams" : {
+            "xlimFactor" : 1.25,
+            "maxSteps": 200,
+            "minSteps": 1,
+            "maxItes" : 200,
+            "maxNewton": 50,
+            "rate_a_dot" : 0.01}
+        },
+    "boundary_condition" : {
+        "esc_groups" : ["esc_con", "esc_dxR", "esc_dy", "esc_dxM"],
+        "mai_groups" : ["mai_con", "mai_dxM", "mai_dy", "mai_dxR"],
+        "GROUP_MA_MAIT" : ["mai_con"],
+        "GROUP_MA_ESCL" : ["esc_con"],
+        "contactDisps" : {"DDL_IMPO" : [{"DX" : 0.0,
+                                         "GROUP_MA" : ["esc_dxM",
+                                                       "mai_dxM"]},
+                                        {"DY" : 0.0,
+                                         "GROUP_MA" : ["mai_dy"]}]},
+        "growthDisps" : {"DDL_IMPO" : [{"DX" : 0.0,
+                                         "GROUP_MA" : ["esc_dxM",
+                                                       "mai_dxM"]},
+                                       {"DY" : 0.0,
+                                        "GROUP_NO" : ["esc_p0",
+                                                      "mai_p0"]}],
+                         "LIAISON_UNIF" : [{"DDL" : "DY",
+                                            "GROUP_MA" : "mai_dy"},
+                                           {"DDL" : "DY",
+                                            "GROUP_MA" : "esc_dy"}]},
+        "wearDisp" : {"GROUP_NO_DX_0" : "wear_dx0",
+                      "GROUP_NO_DY_0" : "wear_dy0"}
+    },
+    "code_aster" : {"dict_P" : {"memory_limit" : 10000,
+                                "ncpus" : 2}}
+}

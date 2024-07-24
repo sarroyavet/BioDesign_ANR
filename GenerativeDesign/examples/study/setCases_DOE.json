@@ -1,0 +1,10 @@
+{
+    "parFile" : "/params_Moment.json",
+    "studyFolder" : "/Tests/eccentric_force",
+    "makeParameterModule" : "Moment_Function",
+    "numOfProcessors" : 2,
+    "runSimultations" : true,
+    "RunAnalysis" : "/../../src/RunAnalysis_general.py",
+    "unit0" : 40,
+    "continuePreviews" : false
+}

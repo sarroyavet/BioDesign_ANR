@@ -1,0 +1,377 @@
+{
+    "mesh": {
+        "lcMin": 0.002,
+        "lcMax": 0.08,
+        "sizeGrwRate": 0.25,
+        "lcLimFactor": 0.75,
+        "fine_x_rate": 1.25,
+        "newgroups": [
+            {
+                "CREA_GROUP_MA": [
+                    {
+                        "NOM": "w_dx0",
+                        "UNION": [
+                            "esc_dy",
+                            "esc_dxR",
+                            "mai_dy",
+                            "mai_dxR"
+                        ]
+                    },
+                    {
+                        "NOM": "w_dy0",
+                        "UNION": [
+                            "esc_dy",
+                            "mai_dy"
+                        ]
+                    }
+                ]
+            },
+            {
+                "CREA_GROUP_NO": [
+                    {
+                        "TOUT_GROUP_MA": "OUI"
+                    }
+                ]
+            },
+            {
+                "CREA_GROUP_NO": [
+                    {
+                        "NOM": "esc_p0",
+                        "INTERSEC": [
+                            "esc_con",
+                            "esc_dxM"
+                        ]
+                    },
+                    {
+                        "NOM": "mai_p0",
+                        "INTERSEC": [
+                            "mai_con",
+                            "mai_dxM"
+                        ]
+                    },
+                    {
+                        "NOM": "esc_pR",
+                        "INTERSEC": [
+                            "esc_con",
+                            "esc_dxR"
+                        ]
+                    }
+                ]
+            },
+            {
+                "CREA_GROUP_NO": [
+                    {
+                        "NOM": "wear_dx0",
+                        "DIFFE": [
+                            "w_dx0",
+                            "esc_pR"
+                        ]
+                    },
+                    {
+                        "NOM": "wear_dy0",
+                        "DIFFE": [
+                            "w_dy0",
+                            "esc_pR"
+                        ]
+                    }
+                ]
+            }
+        ]
+    },
+    "fileNames": {
+        "geoGen": "/geometry.py",
+        "dummFile": "/GrowthWearGeneral.dumm",
+        "asterFolder": "/Tests/Be_0.4_St_1.0"
+    },
+    "model": {
+        "materials": {
+            "MODELISATION": "D_PLAN",
+            "E": 1000.0,
+            "nu": 0.3
+        },
+        "growthParams": {
+            "maxDis": 10.0,
+            "Gr": 6.25,
+            "Sr": 0.0,
+            "tauLim": 0.5,
+            "sigLim": 0.5,
+            "vel": 7.1,
+            "Wr": 0.0,
+            "a_f": 0.5,
+            "Gr_mai_factor": 1.0
+        },
+        "timeParams": {
+            "deltaT": 1.0,
+            "final": 10000.0,
+            "prints": 200
+        },
+        "algoParams": {
+            "xlimFactor": 1.25,
+            "maxSteps": 200,
+            "minSteps": 1,
+            "maxItes": 200,
+            "maxNewton": 50,
+            "a_dot_ref": 0.0006666666666666666,
+            "rate_a_dot": 0.01,
+            "maxDepl": 4e-05
+        }
+    },
+    "boundary_condition": {
+        "esc_groups": [
+            "esc_con",
+            "esc_dxR",
+            "esc_dy",
+            "esc_dxM"
+        ],
+        "mai_groups": [
+            "mai_con",
+            "mai_dxM",
+            "mai_dy",
+            "mai_dxR"
+        ],
+        "GROUP_MA_MAIT": [
+            "mai_con"
+        ],
+        "GROUP_MA_ESCL": [
+            "esc_con"
+        ],
+        "contactDisps": {
+            "DDL_IMPO": [
+                {
+                    "DX": 0.0,
+                    "GROUP_MA": [
+                        "esc_dxM",
+                        "mai_dxM"
+                    ]
+                },
+                {
+                    "DY": 0.0,
+                    "GROUP_MA": [
+                        "mai_dy"
+                    ]
+                }
+            ]
+        },
+        "growthDisps": {
+            "DDL_IMPO": [
+                {
+                    "DX": 0.0,
+                    "GROUP_MA": [
+                        "esc_dxM",
+                        "mai_dxM"
+                    ]
+                },
+                {
+                    "DY": 0.0,
+                    "GROUP_NO": [
+                        "esc_p0",
+                        "mai_p0"
+                    ]
+                }
+            ],
+            "LIAISON_UNIF": [
+                {
+                    "DDL": "DY",
+                    "GROUP_MA": "mai_dy"
+                },
+                {
+                    "DDL": "DY",
+                    "GROUP_MA": "esc_dy"
+                }
+            ]
+        },
+        "contactLoad": [
+            {
+                "M": 0.0,
+                "GROUP_MA": [
+                    "esc_dy"
+                ],
+                "FY": -0.5
+            }
+        ],
+        "wearDisp": {
+            "GROUP_NO_DX_0": "wear_dx0",
+            "GROUP_NO_DY_0": "wear_dy0"
+        }
+    },
+    "code_aster": {
+        "dict_P": {
+            "memory_limit": 4000
+        }
+    },
+    "c_a_unit": 34,
+    "initialGeometry": {
+        "esc": {
+            "main": {
+                "lines": [
+                    {
+                        "physical_name": "esc_con",
+                        "type": "circlearc",
+                        "ordered_points": [
+                            0,
+                            4,
+                            1
+                        ]
+                    },
+                    {
+                        "physical_name": "esc_dxR",
+                        "type": "straight",
+                        "ordered_points": [
+                            1,
+                            2
+                        ]
+                    },
+                    {
+                        "physical_name": "esc_dy",
+                        "type": "straight",
+                        "ordered_points": [
+                            2,
+                            3
+                        ]
+                    },
+                    {
+                        "physical_name": "esc_dxM",
+                        "type": "straight",
+                        "ordered_points": [
+                            3,
+                            0
+                        ]
+                    }
+                ],
+                "points": [
+                    [
+                        0.0,
+                        0.0
+                    ],
+                    [
+                        1.0,
+                        0.02899054433332182
+                    ],
+                    [
+                        1.0,
+                        2.0
+                    ],
+                    [
+                        0.0,
+                        2.0
+                    ],
+                    [
+                        0.0,
+                        17.261498096647216
+                    ]
+                ]
+            },
+            "aux": {
+                "lines": [
+                    {
+                        "physical_name": "esc_aux",
+                        "type": "straight",
+                        "ordered_points": [
+                            0,
+                            1
+                        ]
+                    }
+                ],
+                "refLine": [
+                    "esc_con"
+                ],
+                "points": [
+                    [
+                        0.0,
+                        0.0
+                    ],
+                    [
+                        0.44000000000000006,
+                        0.0
+                    ]
+                ]
+            },
+            "max_x": 1.1
+        },
+        "mai": {
+            "flip_boundaries": [
+                "mai_con"
+            ],
+            "main": {
+                "lines": [
+                    {
+                        "physical_name": "mai_con",
+                        "type": "straight",
+                        "ordered_points": [
+                            0,
+                            1
+                        ]
+                    },
+                    {
+                        "physical_name": "mai_dxR",
+                        "type": "straight",
+                        "ordered_points": [
+                            1,
+                            2
+                        ]
+                    },
+                    {
+                        "physical_name": "mai_dy",
+                        "type": "straight",
+                        "ordered_points": [
+                            2,
+                            3
+                        ]
+                    },
+                    {
+                        "physical_name": "mai_dxM",
+                        "type": "straight",
+                        "ordered_points": [
+                            3,
+                            0
+                        ]
+                    }
+                ],
+                "points": [
+                    [
+                        0.0,
+                        0.0
+                    ],
+                    [
+                        3.0,
+                        0.0
+                    ],
+                    [
+                        3.0,
+                        -3.0
+                    ],
+                    [
+                        0.0,
+                        -3.0
+                    ]
+                ]
+            },
+            "aux": {
+                "lines": [
+                    {
+                        "physical_name": "mai_aux",
+                        "type": "straight",
+                        "ordered_points": [
+                            0,
+                            1
+                        ]
+                    }
+                ],
+                "refLine": [
+                    "mai_con"
+                ],
+                "points": [
+                    [
+                        0.0,
+                        0.0
+                    ],
+                    [
+                        0.44000000000000006,
+                        0.0
+                    ]
+                ]
+            },
+            "max_x": 3.3000000000000003
+        }
+    }
+}
